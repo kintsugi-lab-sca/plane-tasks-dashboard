@@ -14,6 +14,7 @@ struct MenuContentView: View {
     @State private var quickAddLabelIDs: Set<String> = []
     @State private var isCreating = false
     @FocusState private var quickAddFocused: Bool
+    @Namespace private var viewToggleNS
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,11 +42,15 @@ struct MenuContentView: View {
 
     /// Ancho del panel: que quepan todas las columnas sin scroll lateral y,
     /// con tablero visible, al menos media pantalla (≈ un cuadrante junto con
-    /// el alto al 50 %). Tope al 85 % de la pantalla.
+    /// el alto al 50 %). Tope al 85 % de la pantalla. En modo gantt el ancho
+    /// no depende de columnas: panel generoso para el eje temporal.
     private var panelWidth: CGFloat {
+        let screenWidth = NSScreen.main?.visibleFrame.width ?? 1440
+        if app.settings.boardMode == "gantt" {
+            return screenWidth * 0.62
+        }
         let count = max(2, app.kanbanStates.count)
         let ideal = CGFloat(count) * 216 * fs + 28
-        let screenWidth = NSScreen.main?.visibleFrame.width ?? 1440
         let minWidth = app.kanbanStates.isEmpty ? 0 : screenWidth * 0.5
         return min(max(ideal, minWidth), screenWidth * 0.85)
     }
@@ -60,6 +65,7 @@ struct MenuContentView: View {
                     .controlSize(.small)
             }
             Spacer()
+            viewToggle
             searchField
             Button {
                 showQuickAdd.toggle()
@@ -108,6 +114,38 @@ struct MenuContentView: View {
         .padding(.leading, isWindow ? 78 : 12)
         .padding(.trailing, 12)
         .padding(.vertical, 8)
+    }
+
+    /// Conmutador kanban ↔ gantt: cápsula con indicador deslizante.
+    private var viewToggle: some View {
+        HStack(spacing: 2) {
+            viewToggleSegment(icon: "square.grid.3x1.below.line.grid.1x2", mode: "kanban", help: "Tablero kanban")
+            viewToggleSegment(icon: GanttSymbols.gantt, mode: "gantt", help: "Cronograma (gantt)")
+        }
+        .padding(2)
+        .background(Color.primary.opacity(0.06), in: Capsule())
+    }
+
+    private func viewToggleSegment(icon: String, mode: String, help: String) -> some View {
+        let active = app.settings.boardMode == mode
+        return Button {
+            withAnimation(.snappy(duration: 0.25)) { app.settings.boardMode = mode }
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 10 * fs, weight: .medium))
+                .foregroundStyle(active ? AnyShapeStyle(app.theme.accent ?? .accentColor) : app.theme.secondaryStyle)
+                .frame(width: 26 * fs, height: 18 * fs)
+                .background {
+                    if active {
+                        Capsule()
+                            .fill(app.theme.cardStyle)
+                            .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+                            .matchedGeometryEffect(id: "board-view", in: viewToggleNS)
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .help(help)
     }
 
     /// Búsqueda client-side sobre las tareas cargadas; Esc limpia el campo.
@@ -333,7 +371,13 @@ struct MenuContentView: View {
                     .padding(.vertical, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                KanbanBoard(fillsHeight: isWindow)
+                if app.settings.boardMode == "gantt" {
+                    GanttBoard(fillsHeight: isWindow)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                } else {
+                    KanbanBoard(fillsHeight: isWindow)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                }
             }
         }
     }

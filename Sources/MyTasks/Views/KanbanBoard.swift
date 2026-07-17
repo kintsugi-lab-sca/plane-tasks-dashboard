@@ -147,60 +147,8 @@ struct WorkItemCard: View {
         }
         .draggable(item.id)
         .contextMenu {
-            Button("Abrir en Plane") { openInPlane() }
-            Divider()
-            ForEach(states) { state in
-                Button {
-                    Task { await app.changeState(of: item, to: state) }
-                } label: {
-                    if state.id == item.state {
-                        Label(state.name, systemImage: "checkmark")
-                    } else {
-                        Text(state.name)
-                    }
-                }
-            }
-            // Secciones planas, no Menu anidados: los submenús dentro de
-            // .contextMenu meten a SwiftUI en un bucle infinito de invalidación
-            // (freeze con CPU al 100%) en macOS 26.
-            Section("Prioridad") {
-                ForEach(WorkItemPriority.options, id: \.0) { value, name in
-                    checkmarkButton(name, checked: item.priority == value) {
-                        Task { await app.changePriority(of: item, to: value) }
-                    }
-                }
-            }
-            if !projectLabels.isEmpty {
-                Section("Etiquetas") {
-                    ForEach(projectLabels) { label in
-                        checkmarkButton(label.name, checked: item.labels.contains(label.id)) {
-                            Task { await app.toggleLabel(label, on: item) }
-                        }
-                    }
-                }
-            }
-            if !projectMembers.isEmpty {
-                Section("Asignados") {
-                    ForEach(projectMembers) { member in
-                        checkmarkButton(member.displayName ?? member.id, checked: item.assignees.contains(member.id)) {
-                            Task { await app.toggleAssignee(member, on: item) }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var projectLabels: [WorkItemLabel] { app.labelsByProject[item.project] ?? [] }
-    private var projectMembers: [UserLite] { app.membersByProject[item.project] ?? [] }
-
-    private func checkmarkButton(_ title: String, checked: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            if checked {
-                Label(title, systemImage: "checkmark")
-            } else {
-                Text(title)
-            }
+            // Contenido compartido con el gantt (ver WorkItemMenuContent).
+            WorkItemMenuContent(item: item)
         }
     }
 

@@ -15,8 +15,8 @@ struct WorkItem: Codable, Identifiable, Hashable, Sendable {
     var assignees: [String]
     var labels: [String]
     let project: String
-    let startDate: String?
-    let targetDate: String?
+    var startDate: String?
+    var targetDate: String?
     let descriptionHtml: String?
 
     var priorityRank: Int {

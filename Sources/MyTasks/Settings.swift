@@ -10,6 +10,8 @@ struct AppSettings: Sendable, Equatable {
     var badgeMode: String
     /// Id del atajo global (ver HotKey.options); "none" = desactivado.
     var hotKeyID: String
+    /// Vista del tablero: "kanban" o "gantt".
+    var boardMode: String
     var refreshMinutes: Int
     var themeID: String
     var fontScale: Double
@@ -28,6 +30,7 @@ struct AppSettings: Sendable, Equatable {
             notifyChanges: d.bool(forKey: "notifyChanges"),
             badgeMode: d.string(forKey: "badgeMode") ?? "all",
             hotKeyID: d.string(forKey: "hotKeyID") ?? "none",
+            boardMode: d.string(forKey: "boardMode") ?? "kanban",
             refreshMinutes: max(1, d.integer(forKey: "refreshMinutes") == 0 ? 5 : d.integer(forKey: "refreshMinutes")),
             themeID: d.string(forKey: "themeID") ?? "system",
             fontScale: d.double(forKey: "fontScale") == 0 ? 1.0 : d.double(forKey: "fontScale"),
@@ -47,6 +50,7 @@ struct AppSettings: Sendable, Equatable {
         d.set(notifyChanges, forKey: "notifyChanges")
         d.set(badgeMode, forKey: "badgeMode")
         d.set(hotKeyID, forKey: "hotKeyID")
+        d.set(boardMode, forKey: "boardMode")
         d.set(refreshMinutes, forKey: "refreshMinutes")
         d.set(themeID, forKey: "themeID")
         d.set(fontScale, forKey: "fontScale")

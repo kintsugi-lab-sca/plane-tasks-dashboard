@@ -142,6 +142,14 @@ final class AppState {
         return searchFiltered(items, project: project)
     }
 
+    /// Tareas del cronograma (gantt): misma cadena de filtros que el kanban
+    /// (módulo → ciclo → "solo mías" → búsqueda), sin partir por estado.
+    var ganttItems: [WorkItem] {
+        guard let project = selectedProject else { return [] }
+        let items = cycleFiltered(moduleFiltered(displayedItems(for: project)))
+        return searchFiltered(items, project: project)
+    }
+
     /// Filtro por texto sobre el nombre y el identificador ("ROMAN-12").
     private func searchFiltered(_ items: [WorkItem], project: Project) -> [WorkItem] {
         let query = searchText.trimmingCharacters(in: .whitespaces)
@@ -392,6 +400,18 @@ final class AppState {
 
     func changeState(of item: WorkItem, to newState: WorkItemState) async {
         await update(item, fields: ["state": newState.id]) { $0.state = newState.id }
+    }
+
+    /// Reprograma fechas (drag/resize en el gantt); solo envía las que cambian.
+    func changeDates(of item: WorkItem, start: String? = nil, target: String? = nil) async {
+        var fields: [String: any Sendable] = [:]
+        if let start { fields["start_date"] = start }
+        if let target { fields["target_date"] = target }
+        guard !fields.isEmpty else { return }
+        await update(item, fields: fields) {
+            if let start { $0.startDate = start }
+            if let target { $0.targetDate = target }
+        }
     }
 
     func changePriority(of item: WorkItem, to priority: String) async {

@@ -1,7 +1,8 @@
-# MyTasks — kanban de Plane en la barra de menús de macOS
+# MyTasks — kanban y gantt de Plane en la barra de menús de macOS
 
 App nativa de barra de menús (macOS 14+) que muestra tus tareas de una instancia
-[Plane](https://plane.so) self-hosted en un tablero kanban: panel desplegable
+[Plane](https://plane.so) self-hosted en un tablero kanban o un cronograma
+(gantt): panel desplegable
 anclado a la derecha de la pantalla, ventana de tablero independiente,
 notificaciones de cambios, atajo de teclado global y edición de tareas sin salir
 del panel. SwiftPM puro, sin dependencias externas.
@@ -9,6 +10,9 @@ del panel. SwiftPM puro, sin dependencias externas.
 ## Características
 
 - **Kanban por estados** con drag & drop entre columnas y orden por prioridad.
+- **Cronograma (gantt)** conmutable desde la cabecera: barras por tarea con el color
+  del estado, hitos, línea de "hoy", zoom día/semana/mes y bandeja de tareas sin
+  fechas. Arrastra una barra (o estira su borde) para reprogramar las fechas.
 - **Edición desde la card**: estado (incluidos Done/Cancelled para cerrar tareas),
   prioridad, etiquetas y asignados, con actualización optimista y rollback si la API falla.
 - **Detalle de tarea** en popover: descripción y comentarios renderizados en HTML.
