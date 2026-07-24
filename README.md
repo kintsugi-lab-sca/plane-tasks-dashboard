@@ -10,20 +10,26 @@ del panel. SwiftPM puro, sin dependencias externas.
 ## Características
 
 - **Kanban por estados** con drag & drop entre columnas y orden por prioridad.
+  Las cards muestran asignados (iniciales; círculo punteado si está sin asignar),
+  módulo, ciclo, fechas, etiquetas y si hay descripción.
 - **Cronograma (gantt)** conmutable desde la cabecera: barras por tarea con el color
-  del estado, hitos, línea de "hoy", zoom día/semana/mes y bandeja de tareas sin
-  fechas. Arrastra una barra (o estira su borde) para reprogramar las fechas.
+  del estado, hitos, línea de "hoy", bandeja de tareas sin fechas y zoom continuo
+  (pinch o ⌘+scroll, con presets día/semana/mes/trimestre). Arrastra una barra
+  (o estira su borde) para reprogramar las fechas.
 - **Edición desde la card**: estado (incluidos Done/Cancelled para cerrar tareas),
   prioridad, etiquetas y asignados, con actualización optimista y rollback si la API falla.
 - **Detalle de tarea** en popover: descripción y comentarios renderizados en HTML.
 - **Creación rápida** desde la cabecera del panel: título + prioridad + etiquetas;
   la tarea nace asignada a ti y en el módulo filtrado.
-- **Filtros**: proyecto, módulo, ciclo, "solo mías" y búsqueda instantánea client-side.
-- **Notificaciones nativas** de tareas nuevas asignadas a ti y cambios de estado
-  hechos por otros; clic para abrir la tarea en Plane.
+- **Filtros**: proyecto, módulo, ciclo, "solo mías", prioridad y búsqueda
+  instantánea client-side.
+- **Notificaciones nativas** de tareas nuevas asignadas a ti, cambios de estado
+  hechos por otros y avisos de vencimiento (hoy y mañana); clic para abrir la
+  tarea en Plane.
 - **Atajo global** para mostrar/ocultar el panel (sin permisos de accesibilidad).
 - **4 temas** (sistema, kintsugi, midnight, hacker) con colores personalizables,
-  contador en el icono de la barra y arranque al iniciar sesión.
+  contador en el icono de la barra (todas / urgentes / vencidas) y arranque al
+  iniciar sesión.
 
 ## Requisitos
 
