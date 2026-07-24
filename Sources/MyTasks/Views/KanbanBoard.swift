@@ -111,6 +111,12 @@ struct WorkItemCard: View {
                 Text("\(project?.identifier ?? "")-\(item.sequenceId)")
                     .font(.system(size: 9 * fs, design: .monospaced))
                     .foregroundStyle(app.theme.secondaryStyle)
+                if item.hasDescription {
+                    Image(systemName: "text.alignleft")
+                        .font(.system(size: 8 * fs))
+                        .foregroundStyle(.tertiary)
+                        .help("Tiene descripción")
+                }
                 Spacer()
                 if item.priority == "urgent" || item.priority == "high" {
                     Image(systemName: "flag.fill")
@@ -133,7 +139,11 @@ struct WorkItemCard: View {
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
             metaRow
-            stateTag
+            HStack(spacing: 4) {
+                stateTag
+                Spacer(minLength: 4)
+                AssigneeBadges(item: item, size: 15 * fs, showEmpty: true)
+            }
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,16 +162,21 @@ struct WorkItemCard: View {
         }
     }
 
-    /// Módulo, fechas y etiquetas — solo se renderiza si hay algo que mostrar.
+    /// Módulo, ciclo, fechas y etiquetas — solo se renderiza si hay algo que mostrar.
     @ViewBuilder
     private var metaRow: some View {
         let module: Module? = app.module(for: item)
+        let cycle: Cycle? = app.cycle(for: item)
         let labels: [WorkItemLabel] = app.labels(for: item)
-        if module != nil || item.targetDate != nil || item.startDate != nil || !labels.isEmpty {
+        if module != nil || cycle != nil || item.targetDate != nil || item.startDate != nil || !labels.isEmpty {
             HStack(spacing: 6) {
                 if let module {
                     chip(icon: "square.grid.2x2", text: module.name)
                         .help("Módulo: \(module.name)")
+                }
+                if let cycle {
+                    chip(icon: "arrow.triangle.2.circlepath", text: cycle.name)
+                        .help("Ciclo: \(cycle.name)")
                 }
                 if let dates = dateText {
                     dateChip(dates)

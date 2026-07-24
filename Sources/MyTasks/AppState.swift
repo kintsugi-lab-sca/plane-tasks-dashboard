@@ -32,6 +32,9 @@ final class AppState {
     var myUserID: String?
     /// Filtro de búsqueda del panel (client-side, no persistido).
     var searchText = ""
+    /// Filtro por prioridad exacta (valor API: "urgent"…"none"); nil = todas.
+    /// Client-side y no persistido, como la búsqueda.
+    var priorityFilter: String?
     var isRefreshing = false
     var lastError: String?
     var hasToken: Bool
@@ -46,6 +49,7 @@ final class AppState {
                 await loadModules()
                 await loadModuleMemberships()
                 await loadCycles()
+                await loadCycleMemberships()
             }
         }
     }
@@ -139,15 +143,20 @@ final class AppState {
     func kanbanItems(in state: WorkItemState) -> [WorkItem] {
         guard let project = selectedProject else { return [] }
         let items = cycleFiltered(moduleFiltered(displayedItems(for: project).filter { $0.state == state.id }))
-        return searchFiltered(items, project: project)
+        return searchFiltered(priorityFiltered(items), project: project)
     }
 
     /// Tareas del cronograma (gantt): misma cadena de filtros que el kanban
-    /// (módulo → ciclo → "solo mías" → búsqueda), sin partir por estado.
+    /// (módulo → ciclo → "solo mías" → prioridad → búsqueda), sin partir por estado.
     var ganttItems: [WorkItem] {
         guard let project = selectedProject else { return [] }
         let items = cycleFiltered(moduleFiltered(displayedItems(for: project)))
-        return searchFiltered(items, project: project)
+        return searchFiltered(priorityFiltered(items), project: project)
+    }
+
+    private func priorityFiltered(_ items: [WorkItem]) -> [WorkItem] {
+        guard let priority = priorityFilter else { return items }
+        return items.filter { $0.priority == priority }
     }
 
     /// Filtro por texto sobre el nombre y el identificador ("ROMAN-12").
@@ -217,6 +226,15 @@ final class AppState {
             visibleProjects.reduce(0) { total, project in
                 total + displayedItems(for: project).count { $0.priority == "urgent" }
             }
+        case "overdue":
+            {
+                let today = GanttLayout.isoString(Date(), calendar: .current)
+                return visibleProjects.reduce(0) { total, project in
+                    total + displayedItems(for: project).count {
+                        if let target = $0.targetDate { target < today } else { false }
+                    }
+                }
+            }()
         default:
             visibleProjects.reduce(0) { $0 + displayedItems(for: $1).count }
         }
@@ -235,6 +253,20 @@ final class AppState {
         membersByProject.values.lazy.compactMap { members in
             members.first { $0.id == id }
         }.first
+    }
+
+    /// Asignados de una tarea resueltos contra los members cacheados; un id
+    /// desconocido (miembro fuera del proyecto) degrada a UserLite sin nombre.
+    func assignees(for item: WorkItem) -> [UserLite] {
+        let members = membersByProject[item.project] ?? []
+        return item.assignees.map { id in
+            members.first { $0.id == id } ?? member(id: id) ?? UserLite(id: id, displayName: nil)
+        }
+    }
+
+    /// Ciclo al que pertenece la tarea (solo resuelto para el proyecto seleccionado).
+    func cycle(for item: WorkItem) -> Cycle? {
+        selectedProjectCycles.first { cycleItemIDs[$0.id]?.contains(item.id) == true }
     }
 
     /// Comentarios de una tarea, bajo demanda (no se cachean: el popover es efímero).
@@ -285,7 +317,8 @@ final class AppState {
             await loadModules(force: true)
             await loadModuleMemberships(force: true)
             await loadCycles(force: true)
-            await loadCycleItems(force: true)
+            await loadCycleMemberships(force: true)
+            notifyDueSoon()
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -338,6 +371,21 @@ final class AppState {
         }
     }
 
+    /// Carga la pertenencia tarea→ciclo de todos los ciclos del proyecto
+    /// seleccionado (alimenta tanto el filtro como el chip de ciclo en las cards).
+    func loadCycleMemberships(force: Bool = false) async {
+        guard let client, let project = selectedProject else { return }
+        for cycle in selectedProjectCycles {
+            if !force, cycleItemIDs[cycle.id] != nil { continue }
+            do {
+                let items = try await client.cycleWorkItems(projectID: project.id, cycleID: cycle.id)
+                cycleItemIDs[cycle.id] = Set(items.map(\.id))
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
     /// Carga la pertenencia tarea→módulo de todos los módulos del proyecto
     /// seleccionado (alimenta tanto el filtro como el chip de módulo en las cards).
     func loadModuleMemberships(force: Bool = false) async {
@@ -351,6 +399,34 @@ final class AppState {
                 lastError = error.localizedDescription
             }
         }
+    }
+
+    /// Avisa de tareas que vencen hoy o mañana (una vez por tarea y fecha;
+    /// las claves ya avisadas se persisten en UserDefaults y se podan al pasar
+    /// la fecha). Corre tras cada refresh: el cambio de día lo cubre el
+    /// refresh loop sin necesitar un timer propio.
+    private func notifyDueSoon() {
+        guard settings.notifyDueSoon else { return }
+        let formatter = GanttLayout.dayFormatter(calendar: .current)
+        let today = formatter.string(from: Date())
+        let tomorrow = formatter.string(from: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date())
+        let defaults = UserDefaults.standard
+        var notified = DueSoon.prune(
+            Set(defaults.stringArray(forKey: "dueNotifiedKeys") ?? []),
+            todayISO: today
+        )
+        for project in visibleProjects {
+            let items = activeItems(for: project, onlyMine: settings.onlyMine)
+            for alert in DueSoon.compute(
+                projectIdentifier: project.identifier, items: items,
+                todayISO: today, tomorrowISO: tomorrow, alreadyNotified: notified
+            ) {
+                notified.insert(alert.dueKey)
+                let url = items.first { $0.id == alert.itemID }.flatMap { webURL(for: $0, in: project) }
+                Notifier.shared.notify(title: alert.title, body: alert.body, url: url)
+            }
+        }
+        defaults.set(Array(notified), forKey: "dueNotifiedKeys")
     }
 
     /// Notifica difs entre refreshes: tareas nuevas o recién asignadas a mí y

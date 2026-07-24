@@ -67,6 +67,7 @@ struct MenuContentView: View {
             Spacer()
             viewToggle
             searchField
+            priorityFilterButton
             Button {
                 showQuickAdd.toggle()
                 if showQuickAdd { quickAddFocused = true }
@@ -146,6 +147,39 @@ struct MenuContentView: View {
                 .contentShape(Capsule())
         }
         .help(help)
+    }
+
+    /// Filtro por prioridad: NSMenu on-demand (mismo gotcha que el resto de
+    /// menús: Menu de SwiftUI inline congela macOS 26).
+    private var priorityFilterButton: some View {
+        Button {
+            let menu = NSMenu()
+            menu.addItem(ClosureMenuItem(title: "Todas las prioridades", checked: app.priorityFilter == nil) {
+                app.priorityFilter = nil
+            })
+            menu.addItem(.separator())
+            for (value, name) in WorkItemPriority.options {
+                menu.addItem(ClosureMenuItem(title: name, checked: app.priorityFilter == value) {
+                    app.priorityFilter = value
+                })
+            }
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        } label: {
+            Image(systemName: app.priorityFilter == nil ? "flag" : "flag.fill")
+                .foregroundStyle(priorityFilterStyle)
+        }
+        .help(app.priorityFilter == nil
+            ? "Filtrar por prioridad"
+            : "Filtrando por prioridad — clic para cambiar")
+    }
+
+    private var priorityFilterStyle: AnyShapeStyle {
+        switch app.priorityFilter {
+        case "urgent": AnyShapeStyle(.red)
+        case "high": AnyShapeStyle(.orange)
+        case nil: app.theme.primaryStyle
+        default: AnyShapeStyle(app.theme.accent ?? .accentColor)
+        }
     }
 
     /// Búsqueda client-side sobre las tareas cargadas; Esc limpia el campo.

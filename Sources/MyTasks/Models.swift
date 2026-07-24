@@ -28,6 +28,17 @@ struct WorkItem: Codable, Identifiable, Hashable, Sendable {
         default: 4
         }
     }
+
+    /// true si la descripción tiene contenido real: Plane devuelve "<p></p>"
+    /// (u otro markup vacío) cuando no hay descripción.
+    var hasDescription: Bool {
+        guard let html = descriptionHtml else { return false }
+        let stripped = html
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !stripped.isEmpty
+    }
 }
 
 /// Prioridades de Plane: (valor API, nombre visible) en orden de menú.

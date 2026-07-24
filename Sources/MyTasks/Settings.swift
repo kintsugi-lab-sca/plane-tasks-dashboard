@@ -6,6 +6,8 @@ struct AppSettings: Sendable, Equatable {
     var visibleProjectIDs: Set<String>
     var onlyMine: Bool
     var notifyChanges: Bool
+    /// Avisar de tareas que vencen hoy o mañana (requiere permiso de notificaciones).
+    var notifyDueSoon: Bool
     /// Contador del icono: "all" (todas), "urgent" (solo urgentes) u "hidden".
     var badgeMode: String
     /// Id del atajo global (ver HotKey.options); "none" = desactivado.
@@ -28,6 +30,7 @@ struct AppSettings: Sendable, Equatable {
             visibleProjectIDs: Set(d.stringArray(forKey: "visibleProjectIDs") ?? []),
             onlyMine: d.object(forKey: "onlyMine") as? Bool ?? true,
             notifyChanges: d.bool(forKey: "notifyChanges"),
+            notifyDueSoon: d.object(forKey: "notifyDueSoon") as? Bool ?? true,
             badgeMode: d.string(forKey: "badgeMode") ?? "all",
             hotKeyID: d.string(forKey: "hotKeyID") ?? "none",
             boardMode: d.string(forKey: "boardMode") ?? "kanban",
@@ -48,6 +51,7 @@ struct AppSettings: Sendable, Equatable {
         d.set(Array(visibleProjectIDs), forKey: "visibleProjectIDs")
         d.set(onlyMine, forKey: "onlyMine")
         d.set(notifyChanges, forKey: "notifyChanges")
+        d.set(notifyDueSoon, forKey: "notifyDueSoon")
         d.set(badgeMode, forKey: "badgeMode")
         d.set(hotKeyID, forKey: "hotKeyID")
         d.set(boardMode, forKey: "boardMode")

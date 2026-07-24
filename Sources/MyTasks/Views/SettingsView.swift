@@ -65,6 +65,7 @@ struct SettingsView: View {
                 Picker("Contador del icono", selection: $app.settings.badgeMode) {
                     Text("Todas las tareas").tag("all")
                     Text("Solo urgentes").tag("urgent")
+                    Text("Solo vencidas").tag("overdue")
                     Text("Oculto").tag("hidden")
                 }
                 Picker("Atajo global del panel", selection: $app.settings.hotKeyID) {
@@ -89,6 +90,7 @@ struct SettingsView: View {
             Section("Notificaciones") {
                 if Notifier.isAvailable {
                     Toggle("Notificar cambios en las tareas", isOn: notifyBinding)
+                    Toggle("Avisar de vencimientos (hoy y mañana)", isOn: dueSoonBinding)
                     if notifDenied {
                         Text("Permiso denegado (\(Notifier.shared.lastError ?? "sin detalle")). Actívalo en Ajustes del Sistema → Notificaciones → MyTasks.")
                             .font(.caption)
@@ -158,6 +160,17 @@ struct SettingsView: View {
             get: { app.settings.notifyChanges },
             set: { on in
                 app.settings.notifyChanges = on
+                guard on else { return }
+                Task { notifDenied = await !Notifier.shared.requestAuthorization() }
+            }
+        )
+    }
+
+    private var dueSoonBinding: Binding<Bool> {
+        Binding(
+            get: { app.settings.notifyDueSoon },
+            set: { on in
+                app.settings.notifyDueSoon = on
                 guard on else { return }
                 Task { notifDenied = await !Notifier.shared.requestAuthorization() }
             }

@@ -8,9 +8,10 @@ enum GanttSymbols {
             ? "chart.gantt" : "calendar.day.timeline.left"
 }
 
-/// Niveles de zoom del cronograma (puntos por día, antes de fontScale).
+/// Presets de zoom del cronograma (puntos por día, antes de fontScale).
+/// El zoom real es continuo (pinch / ⌘+scroll); los presets son atajos.
 enum GanttZoom: String, CaseIterable, Identifiable {
-    case day, week, month
+    case day, week, month, quarter
 
     var id: String { rawValue }
 
@@ -19,6 +20,7 @@ enum GanttZoom: String, CaseIterable, Identifiable {
         case .day: "Día"
         case .week: "Semana"
         case .month: "Mes"
+        case .quarter: "Trimestre"
         }
     }
 
@@ -27,8 +29,55 @@ enum GanttZoom: String, CaseIterable, Identifiable {
         case .day: 42
         case .week: 17
         case .month: 6.5
+        case .quarter: 3
         }
     }
+}
+
+/// Monitor local de rueda/trackpad: convierte ⌘+scroll en zoom del gantt.
+/// Clase aparte porque el closure de NSEvent no es MainActor y necesita
+/// assumeIsolated; `isEnabled` lo gobierna el hover del cronograma (así, con
+/// panel y ventana abiertos a la vez, solo consume eventos el que está bajo
+/// el cursor).
+@MainActor
+final class GanttScrollZoomMonitor {
+    var isEnabled = false
+    var onZoom: ((CGFloat) -> Void)?
+    private var monitor: Any?
+
+    func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            let command = event.modifierFlags.contains(.command)
+            let delta = event.scrollingDeltaY
+            let handled = MainActor.assumeIsolated { () -> Bool in
+                guard let self, self.isEnabled, command, delta != 0 else { return false }
+                self.onZoom?(exp2(delta * 0.015))
+                return true
+            }
+            return handled ? nil : event
+        }
+    }
+
+    func remove() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+}
+
+/// Posición de scroll del cronograma, fuera del ciclo de render: el offset
+/// cambia en cada frame de scroll y observarlo como @State re-renderizaría
+/// todo el tablero continuamente. Solo lo leen los gestos de zoom.
+final class GanttScrollMetrics: @unchecked Sendable {
+    var offset: CGFloat = 0
+    var viewport: CGFloat = 0
+}
+
+private struct GanttScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 /// Vista de cronograma (gantt): eje temporal horizontal con cabecera de
@@ -40,9 +89,24 @@ struct GanttBoard: View {
     /// false en el panel de la barra de menú (alto fijo).
     var fillsHeight = false
 
-    @State private var zoom: GanttZoom = .week
+    /// Puntos por día (antes de fontScale). Continuo: pinch y ⌘+scroll lo
+    /// modulan; los presets de la píldora lo fijan a valores conocidos.
+    @State private var dayWidth: CGFloat = GanttZoom.week.dayWidth
     @State private var trayCollapsed = false
+    @State private var scrollProxy: ScrollViewProxy?
+    @State private var pendingScrollToToday = false
+    @State private var pinchBase: CGFloat?
+    @State private var pinchAnchorWeek: Int?
+    @State private var metrics = GanttScrollMetrics()
+    @State private var zoomMonitor = GanttScrollZoomMonitor()
     @Namespace private var zoomNS
+
+    /// Rango del zoom continuo (pre-fontScale).
+    private static let zoomRange: ClosedRange<CGFloat> = 2.5...48
+
+    private static func clampZoom(_ value: CGFloat) -> CGFloat {
+        min(max(value, zoomRange.lowerBound), zoomRange.upperBound)
+    }
 
     private var fs: CGFloat { CGFloat(app.settings.fontScale) }
     private var accent: Color { app.theme.accent ?? .accentColor }
@@ -54,7 +118,7 @@ struct GanttBoard: View {
     }
 
     var body: some View {
-        let layout = GanttLayout.make(items: app.ganttItems, dayWidth: zoom.dayWidth * fs)
+        let layout = GanttLayout.make(items: app.ganttItems, dayWidth: dayWidth * fs)
         VStack(spacing: 0) {
             if layout.rows.isEmpty && layout.unscheduled.isEmpty {
                 emptyState
@@ -94,9 +158,34 @@ struct GanttBoard: View {
                     todayOverlay(layout)
                 }
                 .frame(width: layout.totalWidth)
+                .background(GeometryReader { g in
+                    Color.clear.preference(
+                        key: GanttScrollOffsetKey.self,
+                        value: -g.frame(in: .named("gantt-scroll")).minX
+                    )
+                })
             }
-            .onAppear { scrollToToday(proxy, layout) }
-            .onChange(of: zoom) {
+            .coordinateSpace(name: "gantt-scroll")
+            .onPreferenceChange(GanttScrollOffsetKey.self) { [metrics] value in
+                metrics.offset = value
+            }
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { metrics.viewport = g.size.width }
+                    .onChange(of: g.size.width) { _, width in metrics.viewport = width }
+            })
+            .simultaneousGesture(magnifyGesture(layout, proxy))
+            .onHover { zoomMonitor.isEnabled = $0 }
+            .onAppear {
+                scrollProxy = proxy
+                scrollToToday(proxy, layout)
+                zoomMonitor.onZoom = { factor in handleScrollZoom(factor) }
+                zoomMonitor.install()
+            }
+            .onDisappear { zoomMonitor.remove() }
+            .onChange(of: dayWidth) {
+                guard pendingScrollToToday else { return }
+                pendingScrollToToday = false
                 DispatchQueue.main.async { scrollToToday(proxy, layout) }
             }
         }
@@ -130,7 +219,8 @@ struct GanttBoard: View {
         let secondary = headerSecondary
         return Canvas { ctx, size in
             let monthFormatter = DateFormatter()
-            monthFormatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
+            // Con el zoom muy alejado (trimestre) el nombre largo no cabe.
+            monthFormatter.setLocalizedDateFormatFromTemplate(layout.dayWidth < 5 ? "MMM yy" : "MMMM yyyy")
             let weekFormatter = DateFormatter()
             weekFormatter.setLocalizedDateFormatFromTemplate("d MMM")
 
@@ -226,19 +316,61 @@ struct GanttBoard: View {
 
     // MARK: - Zoom
 
+    /// Preset más cercano al zoom continuo actual (para resaltar la píldora).
+    private var nearestPreset: GanttZoom {
+        GanttZoom.allCases.min {
+            abs($0.dayWidth - dayWidth) < abs($1.dayWidth - dayWidth)
+        } ?? .week
+    }
+
+    /// Semana del eje que está en el centro del viewport (ancla del zoom).
+    private func centerWeek(_ layout: GanttLayout) -> Int {
+        let centerX = metrics.offset + metrics.viewport / 2
+        let day = max(0, min(layout.dayCount - 1, Int(centerX / layout.dayWidth)))
+        return day / 7
+    }
+
+    /// Pinch en el trackpad: zoom continuo anclado al centro visible.
+    private func magnifyGesture(_ layout: GanttLayout, _ proxy: ScrollViewProxy) -> some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                if pinchBase == nil {
+                    pinchBase = dayWidth
+                    pinchAnchorWeek = centerWeek(layout)
+                }
+                dayWidth = Self.clampZoom((pinchBase ?? dayWidth) * value.magnification)
+                if let week = pinchAnchorWeek {
+                    proxy.scrollTo("gantt-week-\(week)", anchor: .center)
+                }
+            }
+            .onEnded { _ in
+                pinchBase = nil
+                pinchAnchorWeek = nil
+            }
+    }
+
+    /// ⌘+scroll (rueda o trackpad): mismo zoom continuo que el pinch.
+    private func handleScrollZoom(_ factor: CGFloat) {
+        let layout = GanttLayout.make(items: app.ganttItems, dayWidth: dayWidth * fs)
+        let week = centerWeek(layout)
+        dayWidth = Self.clampZoom(dayWidth * factor)
+        scrollProxy?.scrollTo("gantt-week-\(week)", anchor: .center)
+    }
+
     private var zoomPill: some View {
         HStack(spacing: 2) {
             ForEach(GanttZoom.allCases) { level in
                 Button {
-                    withAnimation(.snappy(duration: 0.25)) { zoom = level }
+                    pendingScrollToToday = true
+                    withAnimation(.snappy(duration: 0.25)) { dayWidth = level.dayWidth }
                 } label: {
                     Text(level.label)
                         .font(.system(size: 10 * fs, weight: .semibold))
-                        .foregroundStyle(zoom == level ? AnyShapeStyle(accent) : app.theme.secondaryStyle)
+                        .foregroundStyle(nearestPreset == level ? AnyShapeStyle(accent) : app.theme.secondaryStyle)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
                         .background {
-                            if zoom == level {
+                            if nearestPreset == level {
                                 Capsule()
                                     .fill(app.theme.cardStyle)
                                     .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
@@ -247,7 +379,7 @@ struct GanttBoard: View {
                         }
                 }
                 .buttonStyle(.plain)
-                .help("Escala: \(level.label.lowercased())")
+                .help("Escala: \(level.label.lowercased()) — pinch o ⌘+scroll para zoom fino")
             }
         }
         .padding(3)
@@ -503,6 +635,7 @@ private struct GanttRowView: View {
                 .font(.system(size: 10.5 * fs, weight: .medium))
                 .lineLimit(1)
                 .foregroundStyle(inside ? AnyShapeStyle(textColor) : app.theme.primaryStyle)
+            AssigneeBadges(item: row.item, size: 13 * fs)
         }
     }
 
