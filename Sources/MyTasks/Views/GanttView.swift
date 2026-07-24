@@ -118,17 +118,22 @@ struct GanttBoard: View {
     }
 
     var body: some View {
-        let layout = GanttLayout.make(items: app.ganttItems, dayWidth: dayWidth * fs)
-        VStack(spacing: 0) {
-            if layout.rows.isEmpty && layout.unscheduled.isEmpty {
-                emptyState
-            } else {
-                timeline(layout)
-                    .overlay(alignment: .bottomTrailing) { zoomPill }
-                if !layout.unscheduled.isEmpty {
-                    unscheduledTray(layout.unscheduled)
+        GeometryReader { geo in
+            let layout = GanttLayout.make(
+                items: app.ganttItems, dayWidth: dayWidth * fs, minWidth: geo.size.width
+            )
+            VStack(spacing: 0) {
+                if layout.rows.isEmpty && layout.unscheduled.isEmpty {
+                    emptyState
+                } else {
+                    timeline(layout)
+                        .overlay(alignment: .bottomTrailing) { zoomPill }
+                    if !layout.unscheduled.isEmpty {
+                        unscheduledTray(layout.unscheduled)
+                    }
                 }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
         .frame(height: fillsHeight ? nil : panelBoardHeight)
         .frame(maxHeight: fillsHeight ? .infinity : panelBoardHeight)
@@ -351,7 +356,9 @@ struct GanttBoard: View {
 
     /// ⌘+scroll (rueda o trackpad): mismo zoom continuo que el pinch.
     private func handleScrollZoom(_ factor: CGFloat) {
-        let layout = GanttLayout.make(items: app.ganttItems, dayWidth: dayWidth * fs)
+        let layout = GanttLayout.make(
+            items: app.ganttItems, dayWidth: dayWidth * fs, minWidth: metrics.viewport
+        )
         let week = centerWeek(layout)
         dayWidth = Self.clampZoom(dayWidth * factor)
         scrollProxy?.scrollTo("gantt-week-\(week)", anchor: .center)

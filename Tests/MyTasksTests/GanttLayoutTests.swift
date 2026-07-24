@@ -39,6 +39,19 @@ struct GanttLayoutTests {
         #expect(l.day(l.dayCount - 1) >= l.today)
     }
 
+    @Test func ejeRellenaElViewportConZoomAlejado() {
+        // Datos de un mes con dayWidth 3 ≈ 250 pt de eje; el viewport de 900
+        // se rellena extendiendo el eje hacia el futuro (múltiplo de semana).
+        let l = GanttLayout.make(
+            items: [makeItem(start: "2026-07-10", target: "2026-08-10")],
+            today: today, dayWidth: 3, minWidth: 900, calendar: calendar
+        )
+        #expect(l.totalWidth >= 900)
+        #expect(l.dayCount % 7 == 0)
+        // Sin minWidth el comportamiento no cambia.
+        #expect(layout([makeItem(start: "2026-07-10", target: "2026-08-10")], dayWidth: 3).totalWidth < 900)
+    }
+
     @Test func ejeIncluyeTodasLasFechasConMargen() {
         let l = layout([makeItem(start: "2026-06-01", target: "2026-09-15")])
         #expect(l.firstDay <= formatter.date(from: "2026-06-01")!)

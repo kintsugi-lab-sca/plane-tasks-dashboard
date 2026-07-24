@@ -50,6 +50,7 @@ struct GanttLayout {
         items: [WorkItem],
         today rawToday: Date = Date(),
         dayWidth: CGFloat,
+        minWidth: CGFloat = 0,
         calendar: Calendar = .current
     ) -> GanttLayout {
         let today = calendar.startOfDay(for: rawToday)
@@ -100,7 +101,14 @@ struct GanttLayout {
         }
         let last = calendar.date(byAdding: .day, value: 21, to: maxDate)!
         let span = calendar.dateComponents([.day], from: firstDay, to: last).day ?? 28
-        let dayCount = ((span + 6) / 7) * 7
+        var dayCount = ((span + 6) / 7) * 7
+        // El eje llena al menos `minWidth` (el viewport) extendiéndose hacia
+        // el futuro: con el zoom muy alejado, los datos + margen no cubren el
+        // ancho y el tablero quedaría cortado a media pantalla.
+        if minWidth > 0, dayWidth > 0 {
+            let minDays = Int((minWidth / dayWidth).rounded(.up))
+            dayCount = max(dayCount, ((minDays + 6) / 7) * 7)
+        }
 
         return GanttLayout(
             calendar: calendar, firstDay: firstDay, dayCount: dayCount,
