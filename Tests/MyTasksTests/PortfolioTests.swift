@@ -121,6 +121,23 @@ struct PortfolioTests {
         #expect(Portfolio.upcoming(entry: entry, stats: nil, todayISO: "2026-12-02") == nil)
     }
 
+    @Test func agendaMezclaHitosYTareasActivas() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(fixture.utf8).write(to: dir.appending(path: "aparcago.json"))
+        let entry = try #require(Portfolio.load(from: dir).first)
+        let items = [
+            makeItem(id: "vencida", state: "todo", targetDate: "2026-11-01"),
+            makeItem(id: "mismoDia", state: "doing", targetDate: "2026-12-01"),
+            makeItem(id: "hecha", state: "done", targetDate: "2026-11-15"),
+            makeItem(id: "sinFecha", state: "todo"),
+        ]
+        let rows = Portfolio.agenda(entry: entry, items: items, states: states, todayISO: today)
+        #expect(rows.map(\.itemID) == ["vencida", nil, "mismoDia"])
+        #expect(rows.map(\.overdue) == [true, false, false])
+        #expect(rows[1].label == "Entrega")
+    }
+
     @Test func antiguedadEnDias() throws {
         let formatter = ISO8601DateFormatter()
         let now = try #require(formatter.date(from: "2026-11-22T18:00:00Z"))

@@ -456,18 +456,20 @@ final class AppState {
         }
     }
 
-    /// Contadores de la ficha; nil mientras sus datos de Plane no estén cargados
-    /// (o si el módulo que nombra no existe en el proyecto).
-    func portfolioStats(for entry: PortfolioEntry) -> Portfolio.Stats? {
+    /// Tareas y estados de la ficha (ya restringidas a su módulo); nil mientras
+    /// sus datos de Plane no estén cargados o si el módulo que nombra no existe.
+    func portfolioScope(for entry: PortfolioEntry) -> (items: [WorkItem], states: [WorkItemState])? {
         let projectID = entry.plane.projectId
         guard let items = itemsByProject[projectID], let states = statesByProject[projectID] else { return nil }
-        var memberIDs: Set<String>?
-        if entry.plane.module != nil {
-            guard let module = portfolioModule(for: entry), let ids = moduleItemIDs[module.id] else { return nil }
-            memberIDs = ids
-        }
+        guard entry.plane.module != nil else { return (items, states) }
+        guard let module = portfolioModule(for: entry), let ids = moduleItemIDs[module.id] else { return nil }
+        return (items.filter { ids.contains($0.id) }, states)
+    }
+
+    func portfolioStats(for entry: PortfolioEntry) -> Portfolio.Stats? {
+        guard let scope = portfolioScope(for: entry) else { return nil }
         return Portfolio.stats(
-            items: items, states: states, memberIDs: memberIDs,
+            items: scope.items, states: scope.states, memberIDs: nil,
             todayISO: GanttLayout.isoString(Date(), calendar: .current)
         )
     }

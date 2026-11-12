@@ -129,6 +129,39 @@ enum Portfolio {
         }
     }
 
+    /// Fila de la agenda de la ficha: un hito de kodo o el vencimiento de una tarea.
+    struct AgendaRow: Equatable, Identifiable {
+        let date: String
+        let label: String
+        /// Tarea de Plane a la que corresponde; nil si es un hito de la ficha.
+        let itemID: String?
+        let overdue: Bool
+
+        var id: String { "\(date)|\(itemID ?? label)" }
+    }
+
+    /// Agenda cronológica: hitos futuros de la ficha y tareas activas con fecha
+    /// límite (las vencidas también, marcadas). `items` ya viene restringido a
+    /// la ficha. A igualdad de fecha, el hito va antes.
+    static func agenda(
+        entry: PortfolioEntry,
+        items: [WorkItem],
+        states: [WorkItemState],
+        todayISO: String
+    ) -> [AgendaRow] {
+        let active = Set(states.filter(\.isActive).map(\.id))
+        let milestones = entry.dates
+            .filter { $0.date >= todayISO }
+            .map { AgendaRow(date: $0.date, label: $0.label, itemID: nil, overdue: false) }
+        let tasks = items.compactMap { item -> AgendaRow? in
+            guard active.contains(item.state), let target = item.targetDate else { return nil }
+            return AgendaRow(date: target, label: item.name, itemID: item.id, overdue: target < todayISO)
+        }
+        return (milestones + tasks).sorted {
+            $0.date != $1.date ? $0.date < $1.date : ($0.itemID == nil && $1.itemID != nil)
+        }
+    }
+
     /// Días transcurridos desde `updated_at` (ISO 8601, con o sin milisegundos).
     static func ageInDays(updatedAt: String, now: Date) -> Int? {
         let formatter = ISO8601DateFormatter()
