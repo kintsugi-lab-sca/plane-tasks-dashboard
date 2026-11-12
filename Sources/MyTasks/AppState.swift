@@ -30,6 +30,8 @@ final class AppState {
     var labelsByProject: [String: [WorkItemLabel]] = [:]
     var membersByProject: [String: [UserLite]] = [:]
     var myUserID: String?
+    /// Fichas del portafolio (~/.kodo/portfolio), recargadas al cambiar el directorio.
+    var portfolio: [PortfolioEntry] = []
     /// Filtro de búsqueda del panel (client-side, no persistido).
     var searchText = ""
     /// Filtro por prioridad exacta (valor API: "urgent"…"none"); nil = todas.
@@ -69,6 +71,7 @@ final class AppState {
     }
 
     private var refreshLoop: Task<Void, Never>?
+    private var portfolioWatcher: DispatchSourceFileSystemObject?
 
     /// Token cacheado en memoria: el Keychain se lee UNA vez al arrancar (y al
     /// guardar un token nuevo). Leerlo en cada acceso puede disparar el diálogo
@@ -81,6 +84,7 @@ final class AppState {
         cachedToken = token
         hasToken = token?.isEmpty == false
         selectedProjectID = UserDefaults.standard.string(forKey: "selectedProjectID")
+        watchPortfolio()
         startAutoRefresh()
     }
 
@@ -298,7 +302,10 @@ final class AppState {
         do {
             if myUserID == nil { myUserID = try await client.me().id }
             projects = try await client.projects()
-            for project in projects where settings.visibleProjectIDs.contains(project.id) {
+            let portfolioProjectIDs = Set(portfolio.filter { !$0.archived }.map(\.plane.projectId))
+            for project in projects {
+                let visible = settings.visibleProjectIDs.contains(project.id)
+                guard visible || portfolioProjectIDs.contains(project.id) else { continue }
                 if statesByProject[project.id] == nil {
                     statesByProject[project.id] = try await client.states(projectID: project.id)
                         .sorted { $0.sequence < $1.sequence }
@@ -312,12 +319,13 @@ final class AppState {
                 let previous = itemsByProject[project.id]
                 let fresh = try await client.workItems(projectID: project.id)
                 itemsByProject[project.id] = fresh
-                notifyDiffs(project: project, old: previous, new: fresh)
+                if visible { notifyDiffs(project: project, old: previous, new: fresh) }
             }
             await loadModules(force: true)
             await loadModuleMemberships(force: true)
             await loadCycles(force: true)
             await loadCycleMemberships(force: true)
+            await loadPortfolioMemberships()
             notifyDueSoon()
             lastError = nil
         } catch {
@@ -398,6 +406,87 @@ final class AppState {
             } catch {
                 lastError = error.localizedDescription
             }
+        }
+    }
+
+    // MARK: - Portafolio
+
+    /// Vigila ~/.kodo/portfolio: kodo publica cada ficha con un rename atómico,
+    /// que cuenta como escritura del directorio.
+    private func watchPortfolio() {
+        let directory = Portfolio.directory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        portfolio = Portfolio.load(from: directory)
+        let fd = open(directory.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: .main)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                self?.portfolio = Portfolio.load(from: directory)
+            }
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        portfolioWatcher = source
+    }
+
+    /// Módulo de Plane al que apunta la ficha (se resuelve por nombre).
+    func portfolioModule(for entry: PortfolioEntry) -> Module? {
+        guard let name = entry.plane.module else { return nil }
+        return modulesByProject[entry.plane.projectId]?.first { $0.name == name }
+    }
+
+    /// Carga la pertenencia tarea→módulo de las fichas activas que apuntan a un
+    /// módulo. Los del proyecto seleccionado ya los refrescó loadModuleMemberships.
+    private func loadPortfolioMemberships() async {
+        guard let client else { return }
+        for entry in portfolio where !entry.archived && entry.plane.module != nil {
+            let projectID = entry.plane.projectId
+            if projectID == selectedProject?.id { continue }
+            do {
+                if modulesByProject[projectID] == nil {
+                    modulesByProject[projectID] = try await client.modules(projectID: projectID)
+                }
+                guard let module = portfolioModule(for: entry) else { continue }
+                let items = try await client.moduleWorkItems(projectID: projectID, moduleID: module.id)
+                moduleItemIDs[module.id] = Set(items.map(\.id))
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Contadores de la ficha; nil mientras sus datos de Plane no estén cargados
+    /// (o si el módulo que nombra no existe en el proyecto).
+    func portfolioStats(for entry: PortfolioEntry) -> Portfolio.Stats? {
+        let projectID = entry.plane.projectId
+        guard let items = itemsByProject[projectID], let states = statesByProject[projectID] else { return nil }
+        var memberIDs: Set<String>?
+        if entry.plane.module != nil {
+            guard let module = portfolioModule(for: entry), let ids = moduleItemIDs[module.id] else { return nil }
+            memberIDs = ids
+        }
+        return Portfolio.stats(
+            items: items, states: states, memberIDs: memberIDs,
+            todayISO: GanttLayout.isoString(Date(), calendar: .current)
+        )
+    }
+
+    /// Abre las tareas de la ficha en el tablero (kanban o gantt), filtradas
+    /// por su módulo. Si el proyecto estaba oculto, lo hace visible.
+    func openPortfolio(_ entry: PortfolioEntry, mode: String = "kanban") {
+        let projectID = entry.plane.projectId
+        settings.visibleProjectIDs.insert(projectID)
+        selectedProjectID = projectID
+        selectedModuleID = portfolioModule(for: entry)?.id
+        settings.boardMode = mode
+    }
+
+    func setPortfolioArchived(_ entry: PortfolioEntry, archived: Bool) {
+        do {
+            try Portfolio.setArchived(archived, slug: entry.slug, in: Portfolio.directory)
+        } catch {
+            lastError = error.localizedDescription
         }
     }
 

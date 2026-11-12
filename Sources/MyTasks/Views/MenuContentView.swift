@@ -19,7 +19,7 @@ struct MenuContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if showQuickAdd {
+            if showQuickAdd, !isPortfolio {
                 quickAddRow
             }
             Divider()
@@ -49,40 +49,54 @@ struct MenuContentView: View {
         if app.settings.boardMode == "gantt" {
             return screenWidth * 0.62
         }
+        if isPortfolio {
+            return screenWidth * 0.5
+        }
         let count = max(2, app.kanbanStates.count)
         let ideal = CGFloat(count) * 216 * fs + 28
         let minWidth = app.kanbanStates.isEmpty ? 0 : screenWidth * 0.5
         return min(max(ideal, minWidth), screenWidth * 0.85)
     }
 
+    /// En la vista de portafolio la cabecera no muestra pickers ni filtros:
+    /// son del tablero de tareas.
+    private var isPortfolio: Bool { app.settings.boardMode == "portfolio" }
+
     private var header: some View {
         HStack(spacing: 10) {
-            projectPicker
-            modulePicker
-            cyclePicker
+            if isPortfolio {
+                Text("Portafolio")
+                    .font(.system(size: 13 * fs, weight: .semibold))
+            } else {
+                projectPicker
+                modulePicker
+                cyclePicker
+            }
             if app.isRefreshing {
                 ProgressView()
                     .controlSize(.small)
             }
             Spacer()
             viewToggle
-            searchField
-            priorityFilterButton
-            Button {
-                showQuickAdd.toggle()
-                if showQuickAdd { quickAddFocused = true }
-            } label: {
-                Image(systemName: "plus")
-                    .foregroundStyle(showQuickAdd ? AnyShapeStyle(app.theme.accent ?? .accentColor) : app.theme.primaryStyle)
+            if !isPortfolio {
+                searchField
+                priorityFilterButton
+                Button {
+                    showQuickAdd.toggle()
+                    if showQuickAdd { quickAddFocused = true }
+                } label: {
+                    Image(systemName: "plus")
+                        .foregroundStyle(showQuickAdd ? AnyShapeStyle(app.theme.accent ?? .accentColor) : app.theme.primaryStyle)
+                }
+                .help("Crear tarea rápida")
+                Button {
+                    app.settings.onlyMine.toggle()
+                } label: {
+                    Image(systemName: app.settings.onlyMine ? "person.fill" : "person.2.fill")
+                        .foregroundStyle(app.settings.onlyMine ? AnyShapeStyle(app.theme.accent ?? .accentColor) : app.theme.primaryStyle)
+                }
+                .help(app.settings.onlyMine ? "Mostrando solo mis tareas — clic para ver todas" : "Mostrando todas — clic para ver solo las mías")
             }
-            .help("Crear tarea rápida")
-            Button {
-                app.settings.onlyMine.toggle()
-            } label: {
-                Image(systemName: app.settings.onlyMine ? "person.fill" : "person.2.fill")
-                    .foregroundStyle(app.settings.onlyMine ? AnyShapeStyle(app.theme.accent ?? .accentColor) : app.theme.primaryStyle)
-            }
-            .help(app.settings.onlyMine ? "Mostrando solo mis tareas — clic para ver todas" : "Mostrando todas — clic para ver solo las mías")
             Button {
                 Task { await app.refresh() }
             } label: {
@@ -120,6 +134,7 @@ struct MenuContentView: View {
     /// Conmutador kanban ↔ gantt: cápsula con indicador deslizante.
     private var viewToggle: some View {
         HStack(spacing: 2) {
+            viewToggleSegment(icon: "rectangle.grid.2x2", mode: "portfolio", help: "Portafolio de proyectos")
             viewToggleSegment(icon: "square.grid.3x1.below.line.grid.1x2", mode: "kanban", help: "Tablero kanban")
             viewToggleSegment(icon: GanttSymbols.gantt, mode: "gantt", help: "Cronograma (gantt)")
         }
@@ -379,6 +394,8 @@ struct MenuContentView: View {
     private var content: some View {
         if app.client == nil {
             hint("Configura el API token y el workspace en Ajustes para empezar.")
+        } else if isPortfolio {
+            PortfolioBoard(fillsHeight: isWindow)
         } else if app.visibleProjects.isEmpty {
             hint("No hay proyectos visibles. Actívalos en Ajustes.")
         } else {
