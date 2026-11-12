@@ -27,6 +27,7 @@ struct PortfolioDetailView: View {
                         .font(.system(size: 11 * fs))
                         .foregroundStyle(app.theme.secondaryStyle)
                 }
+                events
                 steps
             }
             .padding(14)
@@ -108,6 +109,34 @@ struct PortfolioDetailView: View {
                             .font(.system(size: 10 * fs, design: .monospaced))
                             .foregroundStyle(app.theme.secondaryStyle)
                         taskOrText(item.name, itemID: item.id)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var events: some View {
+        if let events = entry.events, !events.isEmpty {
+            section("Reuniones y correos") {
+                ForEach(events, id: \.self) { event in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(shortDate(event.date))
+                            .font(.system(size: 11 * fs, weight: .medium))
+                            .frame(width: 52 * fs, alignment: .leading)
+                        Image(systemName: event.kind == "email" ? "envelope" : "person.2")
+                            .font(.system(size: 9 * fs))
+                            .help(event.kind == "email" ? "Correo" : "Reunión")
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(event.title)
+                                .font(.system(size: 11 * fs, weight: .medium))
+                            if let summary = event.summary {
+                                Text(summary)
+                                    .font(.system(size: 11 * fs))
+                                    .foregroundStyle(app.theme.secondaryStyle)
+                            }
+                        }
+                        .textSelection(.enabled)
                     }
                 }
             }
