@@ -82,6 +82,7 @@ struct PortfolioCard: View {
     let entry: PortfolioEntry
 
     @State private var hovering = false
+    @State private var showDetail = false
 
     private var fs: CGFloat { CGFloat(app.settings.fontScale) }
 
@@ -135,8 +136,13 @@ struct PortfolioCard: View {
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(app.theme.cardBorderStyle))
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onHover { hovering = $0 }
-        .onTapGesture { open("kanban") }
-        .help("Clic para ver sus tareas")
+        .onTapGesture { showDetail = true }
+        .popover(isPresented: $showDetail, arrowEdge: .trailing) {
+            PortfolioDetailView(entry: entry) { mode in
+                showDetail = false
+                open(mode)
+            }
+        }
         .contextMenu {
             Button("Ver tareas") { open("kanban") }
             Button("Ver cronograma") { open("gantt") }
