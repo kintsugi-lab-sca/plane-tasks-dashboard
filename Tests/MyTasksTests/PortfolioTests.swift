@@ -62,6 +62,21 @@ struct PortfolioTests {
         #expect(entry.plane.module == "Aparca&Go")
         #expect(entry.nextStep == "Revisar GA4")
         #expect(entry.steps.first?.source == "ROMAN-9")
+        #expect(entry.events == nil)
+    }
+
+    @Test func decodificaReunionesYCorreos() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let withEvents = fixture.replacingOccurrences(
+            of: "\"campo_futuro\": 42",
+            with: "\"events\": [{ \"kind\": \"meeting\", \"date\": \"2026-11-12\", \"title\": \"aparca&go web\", \"summary\": null, \"ref\": \"m-1\" }]"
+        )
+        try Data(withEvents.utf8).write(to: dir.appending(path: "aparcago.json"))
+        let event = try #require(Portfolio.load(from: dir).first?.events?.first)
+        #expect(event.kind == "meeting")
+        #expect(event.title == "aparca&go web")
+        #expect(event.summary == nil)
     }
 
     @Test func directorioInexistenteDaListaVacia() {

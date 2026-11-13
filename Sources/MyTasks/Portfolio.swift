@@ -21,6 +21,16 @@ struct PortfolioEntry: Codable, Identifiable, Hashable, Sendable {
         let source: String?
     }
 
+    /// Reunión o correo relevante que el orquestador asoció al proyecto.
+    struct Event: Codable, Hashable, Sendable {
+        /// "meeting" | "email".
+        let kind: String
+        let date: String
+        let title: String
+        let summary: String?
+        let ref: String?
+    }
+
     let slug: String
     let name: String
     let plane: PlaneRef
@@ -32,6 +42,8 @@ struct PortfolioEntry: Codable, Identifiable, Hashable, Sendable {
     let blockers: [String]
     let dates: [Milestone]
     let steps: [Step]
+    /// Opcional: las fichas anteriores a `kodo portfolio event` no lo traen.
+    let events: [Event]?
     let updatedAt: String
     let updatedBy: String?
 

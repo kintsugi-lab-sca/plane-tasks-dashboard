@@ -114,6 +114,12 @@ struct PortfolioCard: View {
             if let upcoming = Portfolio.upcoming(entry: entry, stats: stats, todayISO: today) {
                 line(icon: "calendar", text: "\(shortDate(upcoming.date)) · \(upcoming.label)")
             }
+            if let event = entry.events?.first {
+                line(
+                    icon: event.kind == "email" ? "envelope" : "person.2",
+                    text: "\(shortDate(event.date)) · \(event.title)"
+                )
+            }
             if !entry.steps.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(entry.steps.prefix(2), id: \.self) { step in
