@@ -87,17 +87,20 @@ enum Portfolio {
     }
 
     /// Crea una ficha vacía (solo nombre y enlace a Plane) con la misma forma
-    /// que escribe `kodo portfolio set`. Si el slug ya existe añade un sufijo.
-    /// Devuelve el slug creado.
+    /// que escribe `kodo portfolio set`. El slug de un módulo lleva delante el
+    /// proyecto (`liken-dev`), porque hay módulos homónimos; si aun así existe,
+    /// añade un sufijo. Devuelve el slug creado.
     @discardableResult
     static func create(
         name: String,
         projectID: String,
         module: String?,
+        projectName: String? = nil,
         in directory: URL,
         now: Date = Date()
     ) throws -> String {
-        let base = slug(for: name).isEmpty ? "proyecto" : slug(for: name)
+        let source = module != nil ? [projectName, name].compactMap { $0 }.joined(separator: " ") : name
+        let base = slug(for: source).isEmpty ? "proyecto" : slug(for: source)
         var slug = base
         var suffix = 2
         while FileManager.default.fileExists(atPath: directory.appending(path: "\(slug).json").path) {
