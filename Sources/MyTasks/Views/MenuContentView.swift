@@ -78,6 +78,14 @@ struct MenuContentView: View {
             }
             Spacer()
             viewToggle
+            if isPortfolio {
+                Button {
+                    showAddPortfolioMenu()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("Añadir un proyecto o módulo al portafolio")
+            }
             if !isPortfolio {
                 searchField
                 priorityFilterButton
@@ -162,6 +170,43 @@ struct MenuContentView: View {
                 .contentShape(Capsule())
         }
         .help(help)
+    }
+
+    /// Alta de fichas: NSMenu on-demand con los proyectos visibles y sus
+    /// módulos que aún no tienen ficha (submenús AppKit, no `Menu` de SwiftUI).
+    private func showAddPortfolioMenu() {
+        let location = NSEvent.mouseLocation
+        Task {
+            await app.loadAllModules()
+            let menu = NSMenu()
+            for project in app.visibleProjects {
+                let submenu = NSMenu()
+                if !app.hasPortfolioEntry(projectID: project.id, module: nil) {
+                    submenu.addItem(ClosureMenuItem(title: "Proyecto entero", checked: false) {
+                        app.addPortfolioEntry(name: project.name, projectID: project.id, module: nil)
+                    })
+                }
+                let modules = (app.modulesByProject[project.id] ?? [])
+                    .filter { $0.status != "cancelled" && !app.hasPortfolioEntry(projectID: project.id, module: $0.name) }
+                    .sorted { ($0.sortOrder ?? 0) < ($1.sortOrder ?? 0) }
+                if !modules.isEmpty, submenu.numberOfItems > 0 {
+                    submenu.addItem(.separator())
+                }
+                for module in modules {
+                    submenu.addItem(ClosureMenuItem(title: module.name, checked: false) {
+                        app.addPortfolioEntry(name: module.name, projectID: project.id, module: module.name)
+                    })
+                }
+                guard submenu.numberOfItems > 0 else { continue }
+                let item = NSMenuItem(title: project.name, action: nil, keyEquivalent: "")
+                item.submenu = submenu
+                menu.addItem(item)
+            }
+            if menu.numberOfItems == 0 {
+                menu.addItem(NSMenuItem(title: "Todo lo visible ya tiene ficha", action: nil, keyEquivalent: ""))
+            }
+            menu.popUp(positioning: nil, at: location, in: nil)
+        }
     }
 
     /// Filtro por prioridad: NSMenu on-demand (mismo gotcha que el resto de

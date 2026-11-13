@@ -484,6 +484,35 @@ final class AppState {
         settings.boardMode = mode
     }
 
+    /// Carga los módulos de todos los proyectos visibles (para el menú de alta
+    /// de fichas); los ya cacheados no se vuelven a pedir.
+    func loadAllModules() async {
+        guard let client else { return }
+        for project in visibleProjects where modulesByProject[project.id] == nil {
+            do {
+                modulesByProject[project.id] = try await client.modules(projectID: project.id)
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    /// true si ya hay ficha (archivada o no) para ese proyecto/módulo.
+    func hasPortfolioEntry(projectID: String, module: String?) -> Bool {
+        portfolio.contains { $0.plane.projectId == projectID && $0.plane.module == module }
+    }
+
+    /// Da de alta una ficha vacía y carga sus datos de Plane.
+    func addPortfolioEntry(name: String, projectID: String, module: String?) {
+        do {
+            try Portfolio.create(name: name, projectID: projectID, module: module, in: Portfolio.directory)
+            portfolio = Portfolio.load(from: Portfolio.directory)
+            Task { await loadPortfolioMemberships() }
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func setPortfolioArchived(_ entry: PortfolioEntry, archived: Bool) {
         do {
             try Portfolio.setArchived(archived, slug: entry.slug, in: Portfolio.directory)

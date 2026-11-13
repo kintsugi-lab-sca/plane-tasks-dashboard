@@ -109,7 +109,7 @@ struct PortfolioTests {
             makeItem(id: "g", state: "review"),
         ]
         let stats = Portfolio.stats(items: items, states: states, memberIDs: nil, todayISO: today)
-        #expect(stats == Portfolio.Stats(done: 1, inProgress: 1, inReview: 1, todo: 2, overdue: 1, nextDue: today))
+        #expect(stats == Portfolio.Stats(done: 1, started: ["doing": 1, "review": 1], todo: 2, overdue: 1, nextDue: today))
         #expect(stats.total == 5)
     }
 
@@ -120,7 +120,7 @@ struct PortfolioTests {
             makeItem(id: "c", state: "todo"),
         ]
         let stats = Portfolio.stats(items: items, states: states, memberIDs: ["a", "c"], todayISO: today)
-        #expect(stats == Portfolio.Stats(done: 1, inProgress: 0, inReview: 0, todo: 1, overdue: 0, nextDue: nil))
+        #expect(stats == Portfolio.Stats(done: 1, started: [:], todo: 1, overdue: 0, nextDue: nil))
     }
 
     @Test func proximaFechaEligeLaMasCercana() throws {
@@ -153,6 +153,30 @@ struct PortfolioTests {
         #expect(rows.map(\.itemID) == ["vencida", nil, "mismoDia"])
         #expect(rows.map(\.overdue) == [true, false, false])
         #expect(rows[1].label == "Entrega")
+    }
+
+    @Test func slugSigueLaReglaDeKodo() {
+        #expect(Portfolio.slug(for: "Aparca&Go") == "aparca-go")
+        #expect(Portfolio.slug(for: "  Traça Web · Núñez ") == "traca-web-nunez")
+        #expect(Portfolio.slug(for: "F2 · Dominio y backoffice (impacts + admin + import Excel)").count <= 40)
+        #expect(Portfolio.slug(for: "···") == "")
+    }
+
+    @Test func altaCreaFichaLegibleYNoPisaLaExistente() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = try Portfolio.create(name: "Traça Web", projectID: "p1", module: "Traça Web", in: dir)
+        let second = try Portfolio.create(name: "Traça Web", projectID: "p2", module: nil, in: dir)
+        #expect(first == "traca-web")
+        #expect(second == "traca-web-2")
+
+        let entries = Portfolio.load(from: dir)
+        #expect(entries.count == 2)
+        let entry = try #require(entries.first { $0.slug == first })
+        #expect(entry.plane == PortfolioEntry.PlaneRef(projectId: "p1", module: "Traça Web"))
+        #expect(entry.headline == nil)
+        #expect(entry.archived == false)
+        #expect(entries.first { $0.slug == second }?.plane.module == nil)
     }
 
     @Test func antiguedadEnDias() throws {

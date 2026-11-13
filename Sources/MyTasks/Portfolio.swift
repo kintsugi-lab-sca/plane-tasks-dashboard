@@ -71,6 +71,64 @@ enum Portfolio {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// Slug de fichero para un nombre: minúsculas ASCII, dígitos y guiones
+    /// (misma regla que valida kodo), máximo 40. Vacío si no queda nada.
+    static func slug(for name: String) -> String {
+        let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
+        let mapped = folded.unicodeScalars.map { scalar -> Character in
+            let isAlnum = ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar)
+            return isAlnum ? Character(scalar) : "-"
+        }
+        return String(mapped)
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
+            .prefix(40)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+
+    /// Crea una ficha vacía (solo nombre y enlace a Plane) con la misma forma
+    /// que escribe `kodo portfolio set`. Si el slug ya existe añade un sufijo.
+    /// Devuelve el slug creado.
+    @discardableResult
+    static func create(
+        name: String,
+        projectID: String,
+        module: String?,
+        in directory: URL,
+        now: Date = Date()
+    ) throws -> String {
+        let base = slug(for: name).isEmpty ? "proyecto" : slug(for: name)
+        var slug = base
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: directory.appending(path: "\(slug).json").path) {
+            slug = "\(base.prefix(37))-\(suffix)"
+            suffix += 1
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let object: [String: Any] = [
+            "schema_version": 1,
+            "slug": slug,
+            "name": name,
+            "plane": ["project_id": projectID, "module": module.map { $0 as Any } ?? NSNull()] as [String: Any],
+            "archived": false,
+            "status": NSNull(),
+            "headline": NSNull(),
+            "next_step": NSNull(),
+            "waiting_on": NSNull(),
+            "blockers": [String](),
+            "dates": [Any](),
+            "steps": [Any](),
+            "events": [Any](),
+            "updated_at": formatter.string(from: now),
+            "updated_by": "mytasks",
+        ]
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: directory.appending(path: "\(slug).json"), options: .atomic)
+        return slug
+    }
+
     /// Cambia solo `archived`, conservando el resto del fichero tal cual
     /// (incluidos campos que esta versión no conozca). Escritura atómica.
     static func setArchived(_ archived: Bool, slug: String, in directory: URL) throws {
@@ -87,23 +145,17 @@ enum Portfolio {
 
     struct Stats: Equatable {
         var done = 0
-        var inProgress = 0
-        /// Entregadas a la espera de revisión (ver `isReview`).
-        var inReview = 0
+        /// Tareas por estado del grupo `started` (id de estado → recuento). Plane
+        /// mete ahí tanto «In Progress» como «In Review»: se cuentan por estado
+        /// real, sin adivinar por el nombre cuál es cuál.
+        var started: [String: Int] = [:]
         /// Activas sin empezar (backlog + unstarted).
         var todo = 0
         var overdue = 0
         /// Fecha límite más próxima (hoy incluido) entre las tareas activas.
         var nextDue: String?
 
-        var total: Int { done + inProgress + inReview + todo }
-    }
-
-    /// Plane mete «In Review» en el grupo `started`, junto a «In Progress»:
-    /// la única forma de separarlos es el nombre del estado.
-    static func isReview(_ state: WorkItemState) -> Bool {
-        let name = state.name.lowercased()
-        return state.group == "started" && (name.contains("review") || name.contains("revisi"))
+        var total: Int { done + started.values.reduce(0, +) + todo }
     }
 
     /// Contadores de las tareas de la ficha. `memberIDs` restringe a un módulo
@@ -114,19 +166,18 @@ enum Portfolio {
         memberIDs: Set<String>?,
         todayISO: String
     ) -> Stats {
-        let byID = Dictionary(uniqueKeysWithValues: states.map { ($0.id, $0) })
+        let groups = Dictionary(uniqueKeysWithValues: states.map { ($0.id, $0.group) })
         var stats = Stats()
         for item in items {
             if let memberIDs, !memberIDs.contains(item.id) { continue }
-            let state = byID[item.state]
-            switch state?.group {
+            switch groups[item.state] {
             case "completed":
                 stats.done += 1
                 continue
             case "cancelled", nil:
                 continue
             case "started":
-                if state.map(isReview) ?? false { stats.inReview += 1 } else { stats.inProgress += 1 }
+                stats.started[item.state, default: 0] += 1
             default:
                 stats.todo += 1
             }
