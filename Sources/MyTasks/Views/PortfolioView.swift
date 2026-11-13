@@ -208,14 +208,10 @@ struct PortfolioCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 ProgressView(value: Double(stats.done), total: Double(max(stats.total, 1)))
                     .controlSize(.small)
-                HStack(spacing: 10) {
-                    counter("checkmark.circle", stats.done, "Hechas")
-                    counter("play.circle", stats.inProgress, "En curso")
-                    counter("circle", stats.todo, "Por hacer")
-                    if stats.overdue > 0 {
-                        counter("exclamationmark.triangle.fill", stats.overdue, "Vencidas")
-                            .foregroundStyle(.red)
-                    }
+                // Con nombres de estado si caben; si no, solo punto de color + número.
+                ViewThatFits(in: .horizontal) {
+                    counters(stats, named: true)
+                    counters(stats, named: false)
                 }
                 .font(.system(size: 10 * fs))
                 .foregroundStyle(app.theme.secondaryStyle)
@@ -227,6 +223,31 @@ struct PortfolioCard: View {
                 : "Tareas: cargando…")
                 .font(.system(size: 10 * fs))
                 .foregroundStyle(app.theme.secondaryStyle)
+        }
+    }
+
+    /// Hechas · un contador por estado `started` con su nombre y color reales
+    /// de Plane (In Progress, In Review…) · por hacer · vencidas.
+    private func counters(_ stats: Portfolio.Stats, named: Bool) -> some View {
+        HStack(spacing: 10) {
+            counter("checkmark.circle", stats.done, "Hechas")
+            ForEach((app.statesByProject[entry.plane.projectId] ?? []).filter { $0.group == "started" }) { state in
+                if let count = stats.started[state.id] {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(Color(hex: state.color) ?? .gray)
+                            .frame(width: 6 * fs, height: 6 * fs)
+                        Text(named ? "\(count) \(state.name)" : "\(count)")
+                    }
+                    .fixedSize()
+                    .help(state.name)
+                }
+            }
+            counter("circle", stats.todo, "Por hacer")
+            if stats.overdue > 0 {
+                counter("exclamationmark.triangle.fill", stats.overdue, "Vencidas")
+                    .foregroundStyle(.red)
+            }
         }
     }
 
