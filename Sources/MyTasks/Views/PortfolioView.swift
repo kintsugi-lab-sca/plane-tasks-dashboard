@@ -90,6 +90,16 @@ struct PortfolioCard: View {
         let stats = app.portfolioStats(for: entry)
         let today = GanttLayout.isoString(Date(), calendar: .current)
         VStack(alignment: .leading, spacing: 6) {
+            // Una ficha de módulo lleva encima el proyecto de Plane: hay
+            // módulos con el mismo nombre en proyectos distintos («DEV»).
+            if entry.plane.module != nil,
+               let project = app.projects.first(where: { $0.id == entry.plane.projectId }) {
+                Text(project.name.uppercased())
+                    .font(.system(size: 9 * fs, weight: .semibold))
+                    .foregroundStyle(app.theme.secondaryStyle)
+                    .lineLimit(1)
+                    .padding(.bottom, -3)
+            }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(entry.name)
                     .font(.system(size: 13 * fs, weight: .bold))
