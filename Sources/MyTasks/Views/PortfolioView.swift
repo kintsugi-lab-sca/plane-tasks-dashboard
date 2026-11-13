@@ -211,6 +211,9 @@ struct PortfolioCard: View {
                 HStack(spacing: 10) {
                     counter("checkmark.circle", stats.done, "Hechas")
                     counter("play.circle", stats.inProgress, "En curso")
+                    if stats.inReview > 0 {
+                        counter("eye", stats.inReview, "En revisión")
+                    }
                     counter("circle", stats.todo, "Por hacer")
                     if stats.overdue > 0 {
                         counter("exclamationmark.triangle.fill", stats.overdue, "Vencidas")

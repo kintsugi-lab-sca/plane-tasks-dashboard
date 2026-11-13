@@ -21,7 +21,7 @@ struct PortfolioDetailView: View {
                 situation
                 if let scope {
                     agenda(Portfolio.agenda(entry: entry, items: scope.items, states: scope.states, todayISO: today))
-                    inProgress(scope)
+                    startedItems(scope)
                 } else {
                     Text("Tareas de Plane: sin cargar")
                         .font(.system(size: 11 * fs))
@@ -97,12 +97,19 @@ struct PortfolioDetailView: View {
         }
     }
 
+    /// Una sección por estado del grupo `started` con su nombre real de Plane
+    /// (In Progress, In Review…): juntos confunden lo que se está haciendo con
+    /// lo que ya espera revisión.
+    private func startedItems(_ scope: (items: [WorkItem], states: [WorkItemState])) -> some View {
+        ForEach(scope.states.filter { $0.group == "started" }) { state in
+            stateSection(state, items: scope.items.filter { $0.state == state.id })
+        }
+    }
+
     @ViewBuilder
-    private func inProgress(_ scope: (items: [WorkItem], states: [WorkItemState])) -> some View {
-        let started = Set(scope.states.filter { $0.group == "started" }.map(\.id))
-        let items = scope.items.filter { started.contains($0.state) }
+    private func stateSection(_ state: WorkItemState, items: [WorkItem]) -> some View {
         if !items.isEmpty {
-            section("En curso (\(items.count))") {
+            section("\(state.name) (\(items.count))") {
                 ForEach(items) { item in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("\(project?.identifier ?? "")-\(item.sequenceId)")

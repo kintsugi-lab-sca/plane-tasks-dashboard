@@ -44,6 +44,7 @@ struct PortfolioTests {
     private let states = [
         WorkItemState(id: "todo", name: "Todo", color: "#000000", group: "unstarted", sequence: 1),
         WorkItemState(id: "doing", name: "Doing", color: "#000000", group: "started", sequence: 2),
+        WorkItemState(id: "review", name: "In Review", color: "#000000", group: "started", sequence: 2.5),
         WorkItemState(id: "done", name: "Done", color: "#000000", group: "completed", sequence: 3),
         WorkItemState(id: "no", name: "Cancelled", color: "#000000", group: "cancelled", sequence: 4),
     ]
@@ -105,10 +106,11 @@ struct PortfolioTests {
             makeItem(id: "d", state: "todo", targetDate: today),
             makeItem(id: "e", state: "no", targetDate: "2026-11-13"),
             makeItem(id: "f", state: "desconocido"),
+            makeItem(id: "g", state: "review"),
         ]
         let stats = Portfolio.stats(items: items, states: states, memberIDs: nil, todayISO: today)
-        #expect(stats == Portfolio.Stats(done: 1, inProgress: 1, todo: 2, overdue: 1, nextDue: today))
-        #expect(stats.total == 4)
+        #expect(stats == Portfolio.Stats(done: 1, inProgress: 1, inReview: 1, todo: 2, overdue: 1, nextDue: today))
+        #expect(stats.total == 5)
     }
 
     @Test func contadoresRestringidosAlModulo() {
@@ -118,7 +120,7 @@ struct PortfolioTests {
             makeItem(id: "c", state: "todo"),
         ]
         let stats = Portfolio.stats(items: items, states: states, memberIDs: ["a", "c"], todayISO: today)
-        #expect(stats == Portfolio.Stats(done: 1, inProgress: 0, todo: 1, overdue: 0, nextDue: nil))
+        #expect(stats == Portfolio.Stats(done: 1, inProgress: 0, inReview: 0, todo: 1, overdue: 0, nextDue: nil))
     }
 
     @Test func proximaFechaEligeLaMasCercana() throws {

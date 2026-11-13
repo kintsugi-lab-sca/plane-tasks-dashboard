@@ -88,13 +88,22 @@ enum Portfolio {
     struct Stats: Equatable {
         var done = 0
         var inProgress = 0
+        /// Entregadas a la espera de revisión (ver `isReview`).
+        var inReview = 0
         /// Activas sin empezar (backlog + unstarted).
         var todo = 0
         var overdue = 0
         /// Fecha límite más próxima (hoy incluido) entre las tareas activas.
         var nextDue: String?
 
-        var total: Int { done + inProgress + todo }
+        var total: Int { done + inProgress + inReview + todo }
+    }
+
+    /// Plane mete «In Review» en el grupo `started`, junto a «In Progress»:
+    /// la única forma de separarlos es el nombre del estado.
+    static func isReview(_ state: WorkItemState) -> Bool {
+        let name = state.name.lowercased()
+        return state.group == "started" && (name.contains("review") || name.contains("revisi"))
     }
 
     /// Contadores de las tareas de la ficha. `memberIDs` restringe a un módulo
@@ -105,18 +114,19 @@ enum Portfolio {
         memberIDs: Set<String>?,
         todayISO: String
     ) -> Stats {
-        let groups = Dictionary(uniqueKeysWithValues: states.map { ($0.id, $0.group) })
+        let byID = Dictionary(uniqueKeysWithValues: states.map { ($0.id, $0) })
         var stats = Stats()
         for item in items {
             if let memberIDs, !memberIDs.contains(item.id) { continue }
-            switch groups[item.state] {
+            let state = byID[item.state]
+            switch state?.group {
             case "completed":
                 stats.done += 1
                 continue
             case "cancelled", nil:
                 continue
             case "started":
-                stats.inProgress += 1
+                if state.map(isReview) ?? false { stats.inReview += 1 } else { stats.inProgress += 1 }
             default:
                 stats.todo += 1
             }
