@@ -179,6 +179,18 @@ struct PortfolioTests {
         #expect(entries.first { $0.slug == second }?.plane.module == nil)
     }
 
+    @Test func slugDeModuloLlevaElProyectoDelante() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let liken = try Portfolio.create(name: "DEV", projectID: "p1", module: "DEV", projectName: "Liken", in: dir)
+        let scribba = try Portfolio.create(name: "DEV", projectID: "p2", module: "DEV", projectName: "Scribba", in: dir)
+        let whole = try Portfolio.create(name: "Clipping", projectID: "p3", module: nil, projectName: "Clipping", in: dir)
+        #expect(liken == "liken-dev")
+        #expect(scribba == "scribba-dev")
+        #expect(whole == "clipping")
+        #expect(Portfolio.load(from: dir).filter { $0.name == "DEV" }.count == 2)
+    }
+
     @Test func antiguedadEnDias() throws {
         let formatter = ISO8601DateFormatter()
         let now = try #require(formatter.date(from: "2026-11-22T18:00:00Z"))

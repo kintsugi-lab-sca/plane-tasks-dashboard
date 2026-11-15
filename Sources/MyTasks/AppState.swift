@@ -505,7 +505,11 @@ final class AppState {
     /// Da de alta una ficha vacía y carga sus datos de Plane.
     func addPortfolioEntry(name: String, projectID: String, module: String?) {
         do {
-            try Portfolio.create(name: name, projectID: projectID, module: module, in: Portfolio.directory)
+            try Portfolio.create(
+                name: name, projectID: projectID, module: module,
+                projectName: projects.first { $0.id == projectID }?.name,
+                in: Portfolio.directory
+            )
             portfolio = Portfolio.load(from: Portfolio.directory)
             Task { await loadPortfolioMemberships() }
         } catch {
