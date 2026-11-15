@@ -10,7 +10,22 @@ struct PortfolioBoard: View {
     @State private var showArchived = false
 
     private var fs: CGFloat { CGFloat(app.settings.fontScale) }
-    private var active: [PortfolioEntry] { app.portfolio.filter { !$0.archived } }
+    /// Activas, primero las que piden atención (bloqueo > vencidas > ficha
+    /// antigua o sin situación) y dentro de cada nivel por nombre.
+    private var active: [PortfolioEntry] {
+        let now = Date()
+        let ranked: [(entry: PortfolioEntry, level: Portfolio.Attention)] = app.portfolio
+            .filter { !$0.archived }
+            .map { entry in
+                (entry, Portfolio.attention(entry: entry, stats: app.portfolioStats(for: entry), now: now))
+            }
+        return ranked
+            .sorted { a, b in
+                if a.level != b.level { return a.level > b.level }
+                return a.entry.name.localizedCaseInsensitiveCompare(b.entry.name) == .orderedAscending
+            }
+            .map(\.entry)
+    }
     private var archived: [PortfolioEntry] { app.portfolio.filter(\.archived) }
 
     var body: some View {
@@ -241,6 +256,12 @@ struct PortfolioCard: View {
     private func counters(_ stats: Portfolio.Stats, named: Bool) -> some View {
         HStack(spacing: 10) {
             counter("checkmark.circle", stats.done, "Hechas")
+            if stats.deliveredRecently > 0 {
+                Text("+\(stats.deliveredRecently)")
+                    .fixedSize()
+                    .padding(.leading, -7)
+                    .help("Entregadas en los últimos \(Portfolio.deliveredDays) días")
+            }
             ForEach((app.statesByProject[entry.plane.projectId] ?? []).filter { $0.group == "started" }) { state in
                 if let count = stats.started[state.id] {
                     HStack(spacing: 3) {

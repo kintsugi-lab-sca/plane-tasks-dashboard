@@ -230,6 +230,10 @@ final class AppState {
             visibleProjects.reduce(0) { total, project in
                 total + displayedItems(for: project).count { $0.priority == "urgent" }
             }
+        case "attention":
+            portfolio.count {
+                Portfolio.attention(entry: $0, stats: portfolioStats(for: $0), now: Date()) >= .overdue
+            }
         case "overdue":
             {
                 let today = GanttLayout.isoString(Date(), calendar: .current)

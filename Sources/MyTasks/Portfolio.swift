@@ -157,8 +157,55 @@ enum Portfolio {
         var overdue = 0
         /// Fecha límite más próxima (hoy incluido) entre las tareas activas.
         var nextDue: String?
+        /// Completadas en los últimos `deliveredDays` días.
+        var deliveredRecently = 0
 
         var total: Int { done + started.values.reduce(0, +) + todo }
+    }
+
+    /// Ventana de «entregado recientemente».
+    static let deliveredDays = 7
+
+    /// Día ISO (`yyyy-MM-dd`) de hace `days` días respecto a `todayISO`.
+    static func dayISO(_ todayISO: String, minusDays days: Int) -> String {
+        let calendar = Calendar(identifier: .gregorian)
+        let formatter = GanttLayout.dayFormatter(calendar: calendar)
+        guard let today = formatter.date(from: todayISO),
+              let date = calendar.date(byAdding: .day, value: -days, to: today)
+        else { return todayISO }
+        return formatter.string(from: date)
+    }
+
+    /// Tareas completadas desde `sinceISO` (día incluido), la más reciente
+    /// primero. `items` ya viene restringido a la ficha. La comparación usa el
+    /// día UTC de `completed_at`: basta para una ventana de una semana.
+    static func delivered(items: [WorkItem], states: [WorkItemState], sinceISO: String) -> [WorkItem] {
+        let completed = Set(states.filter { $0.group == "completed" }.map(\.id))
+        return items
+            .filter { item in
+                guard completed.contains(item.state), let at = item.completedAt else { return false }
+                return String(at.prefix(10)) >= sinceISO
+            }
+            .sorted { ($0.completedAt ?? "") > ($1.completedAt ?? "") }
+    }
+
+    /// Cuánta atención pide una ficha; ordena el portafolio y alimenta el badge.
+    enum Attention: Int, Comparable {
+        case none, stale, overdue, blocked
+
+        static func < (a: Attention, b: Attention) -> Bool { a.rawValue < b.rawValue }
+    }
+
+    /// Bloqueada (bloqueos o estado `blocked`) > con tareas vencidas o en
+    /// riesgo > narrativa ausente o antigua. Una ficha pausada o terminada no
+    /// pide atención.
+    static func attention(entry: PortfolioEntry, stats: Stats?, now: Date) -> Attention {
+        if entry.archived || entry.status == "paused" || entry.status == "done" { return .none }
+        if !entry.blockers.isEmpty || entry.status == "blocked" { return .blocked }
+        if (stats?.overdue ?? 0) > 0 || entry.status == "at_risk" { return .overdue }
+        let age = ageInDays(updatedAt: entry.updatedAt, now: now) ?? 0
+        if entry.headline == nil || age > staleDays { return .stale }
+        return .none
     }
 
     /// Contadores de las tareas de la ficha. `memberIDs` restringe a un módulo
@@ -171,11 +218,13 @@ enum Portfolio {
     ) -> Stats {
         let groups = Dictionary(uniqueKeysWithValues: states.map { ($0.id, $0.group) })
         var stats = Stats()
+        let since = dayISO(todayISO, minusDays: deliveredDays)
         for item in items {
             if let memberIDs, !memberIDs.contains(item.id) { continue }
             switch groups[item.state] {
             case "completed":
                 stats.done += 1
+                if let at = item.completedAt, String(at.prefix(10)) >= since { stats.deliveredRecently += 1 }
                 continue
             case "cancelled", nil:
                 continue

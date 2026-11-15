@@ -33,11 +33,13 @@ struct PortfolioTests {
         return url
     }
 
-    private func makeItem(id: String, state: String, targetDate: String? = nil) -> WorkItem {
+    private func makeItem(
+        id: String, state: String, targetDate: String? = nil, completedAt: String? = nil
+    ) -> WorkItem {
         WorkItem(
             id: id, name: "Tarea", priority: "none", sequenceId: 1, state: state,
             assignees: [], labels: [], project: "p1",
-            startDate: nil, targetDate: targetDate, descriptionHtml: nil
+            startDate: nil, targetDate: targetDate, descriptionHtml: nil, completedAt: completedAt
         )
     }
 
@@ -153,6 +155,47 @@ struct PortfolioTests {
         #expect(rows.map(\.itemID) == ["vencida", nil, "mismoDia"])
         #expect(rows.map(\.overdue) == [true, false, false])
         #expect(rows[1].label == "Entrega")
+    }
+
+    @Test func entregadoEnLaUltimaSemana() {
+        let items = [
+            makeItem(id: "ayer", state: "done", completedAt: "2026-11-11T09:00:00.000000Z"),
+            makeItem(id: "limite", state: "done", completedAt: "2026-11-05T23:59:00Z"),
+            makeItem(id: "viejo", state: "done", completedAt: "2026-11-04T10:00:00Z"),
+            makeItem(id: "sinFecha", state: "done"),
+            makeItem(id: "reabierta", state: "doing", completedAt: "2026-11-11T09:00:00Z"),
+        ]
+        #expect(Portfolio.dayISO(today, minusDays: 7) == "2026-11-05")
+        let delivered = Portfolio.delivered(items: items, states: states, sinceISO: "2026-11-05")
+        #expect(delivered.map(\.id) == ["ayer", "limite"])
+        let stats = Portfolio.stats(items: items, states: states, memberIDs: nil, todayISO: today)
+        #expect(stats.done == 4)
+        #expect(stats.deliveredRecently == 2)
+    }
+
+    @Test func nivelDeAtencion() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func entry(_ patch: [String: String]) throws -> PortfolioEntry {
+            var json = fixture
+            for (from, to) in patch { json = json.replacingOccurrences(of: from, with: to) }
+            try Data(json.utf8).write(to: dir.appending(path: "aparcago.json"))
+            return try #require(Portfolio.load(from: dir).first)
+        }
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-11-13T10:00:00Z"))
+        let noBlockers = ["[\"Acceso a GA4\"]": "[]"]
+        let calm = Portfolio.Stats()
+        let overdue = Portfolio.Stats(overdue: 2)
+
+        #expect(Portfolio.attention(entry: try entry([:]), stats: calm, now: now) == .blocked)
+        #expect(Portfolio.attention(entry: try entry(noBlockers), stats: overdue, now: now) == .overdue)
+        #expect(Portfolio.attention(entry: try entry(noBlockers), stats: calm, now: now) == .none)
+        #expect(Portfolio.attention(entry: try entry(noBlockers), stats: nil, now: now.addingTimeInterval(9 * 86400)) == .stale)
+        let noHeadline = noBlockers.merging(["\"Pendiente de validación del cliente\"": "null"]) { a, _ in a }
+        #expect(Portfolio.attention(entry: try entry(noHeadline), stats: calm, now: now) == .stale)
+        let paused = ["\"waiting\"": "\"paused\""]
+        #expect(Portfolio.attention(entry: try entry(paused), stats: overdue, now: now) == .none)
+        #expect(Portfolio.Attention.blocked > .overdue && Portfolio.Attention.overdue > .stale)
     }
 
     @Test func slugSigueLaReglaDeKodo() {
