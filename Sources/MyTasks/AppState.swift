@@ -472,10 +472,12 @@ final class AppState {
 
     func portfolioStats(for entry: PortfolioEntry) -> Portfolio.Stats? {
         guard let scope = portfolioScope(for: entry) else { return nil }
-        return Portfolio.stats(
+        var stats = Portfolio.stats(
             items: scope.items, states: scope.states, memberIDs: nil,
             todayISO: GanttLayout.isoString(Date(), calendar: .current)
         )
+        stats.unreported = Portfolio.unreported(entry: entry, items: scope.items, states: scope.states)
+        return stats
     }
 
     /// Abre las tareas de la ficha en el tablero (kanban o gantt), filtradas

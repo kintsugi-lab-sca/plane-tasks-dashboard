@@ -173,6 +173,27 @@ struct PortfolioTests {
         #expect(stats.deliveredRecently == 2)
     }
 
+    @Test func entregasPosterioresALaFichaQuedanSinReflejar() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(fixture.utf8).write(to: dir.appending(path: "aparcago.json"))
+        // updated_at de la fixture: 2026-11-12T17:29:01.817Z
+        let entry = try #require(Portfolio.load(from: dir).first)
+        let items = [
+            makeItem(id: "antes", state: "done", completedAt: "2026-11-12T17:00:00.000000Z"),
+            makeItem(id: "despues", state: "done", completedAt: "2026-11-12T19:30:00.123456+02:00"),
+            makeItem(id: "luego", state: "done", completedAt: "2026-11-13T08:00:00Z"),
+            makeItem(id: "abierta", state: "doing", completedAt: "2026-11-13T08:00:00Z"),
+            makeItem(id: "sinFecha", state: "done"),
+        ]
+        // 19:30+02:00 son las 17:30Z: posterior a las 17:29Z de la ficha.
+        #expect(Portfolio.unreported(entry: entry, items: items, states: states) == 2)
+        var stats = Portfolio.Stats()
+        stats.unreported = 2
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-11-13T10:00:00Z"))
+        #expect(Portfolio.attention(entry: entry, stats: stats, now: now) == .blocked)
+    }
+
     @Test func nivelDeAtencion() throws {
         let dir = try tempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -190,6 +211,7 @@ struct PortfolioTests {
         #expect(Portfolio.attention(entry: try entry([:]), stats: calm, now: now) == .blocked)
         #expect(Portfolio.attention(entry: try entry(noBlockers), stats: overdue, now: now) == .overdue)
         #expect(Portfolio.attention(entry: try entry(noBlockers), stats: calm, now: now) == .none)
+        #expect(Portfolio.attention(entry: try entry(noBlockers), stats: Portfolio.Stats(unreported: 1), now: now) == .stale)
         #expect(Portfolio.attention(entry: try entry(noBlockers), stats: nil, now: now.addingTimeInterval(9 * 86400)) == .stale)
         let noHeadline = noBlockers.merging(["\"Pendiente de validación del cliente\"": "null"]) { a, _ in a }
         #expect(Portfolio.attention(entry: try entry(noHeadline), stats: calm, now: now) == .stale)

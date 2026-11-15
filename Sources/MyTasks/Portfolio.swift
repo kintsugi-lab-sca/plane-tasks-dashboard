@@ -159,6 +159,9 @@ enum Portfolio {
         var nextDue: String?
         /// Completadas en los últimos `deliveredDays` días.
         var deliveredRecently = 0
+        /// Completadas DESPUÉS de la última actualización de la ficha: entregas
+        /// que la narrativa todavía no recoge (ver `unreported`).
+        var unreported = 0
 
         var total: Int { done + started.values.reduce(0, +) + todo }
     }
@@ -189,6 +192,19 @@ enum Portfolio {
             .sorted { ($0.completedAt ?? "") > ($1.completedAt ?? "") }
     }
 
+    /// Tareas completadas en Plane después de `updated_at` de la ficha. Es la
+    /// red de seguridad contra una ficha que nadie actualizó: no depende de que
+    /// el orquestador se acuerde, y usa la pertenencia real al módulo (`items`
+    /// ya viene restringido a la ficha).
+    static func unreported(entry: PortfolioEntry, items: [WorkItem], states: [WorkItemState]) -> Int {
+        guard let updated = parseISO(entry.updatedAt) else { return 0 }
+        let completed = Set(states.filter { $0.group == "completed" }.map(\.id))
+        return items.count { item in
+            guard completed.contains(item.state), let at = item.completedAt.flatMap(parseISO) else { return false }
+            return at > updated
+        }
+    }
+
     /// Cuánta atención pide una ficha; ordena el portafolio y alimenta el badge.
     enum Attention: Int, Comparable {
         case none, stale, overdue, blocked
@@ -204,7 +220,7 @@ enum Portfolio {
         if !entry.blockers.isEmpty || entry.status == "blocked" { return .blocked }
         if (stats?.overdue ?? 0) > 0 || entry.status == "at_risk" { return .overdue }
         let age = ageInDays(updatedAt: entry.updatedAt, now: now) ?? 0
-        if entry.headline == nil || age > staleDays { return .stale }
+        if entry.headline == nil || age > staleDays || (stats?.unreported ?? 0) > 0 { return .stale }
         return .none
     }
 
@@ -289,15 +305,16 @@ enum Portfolio {
 
     /// Días transcurridos desde `updated_at` (ISO 8601, con o sin milisegundos).
     static func ageInDays(updatedAt: String, now: Date) -> Int? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        var date = formatter.date(from: updatedAt)
-        if date == nil {
-            formatter.formatOptions = [.withInternetDateTime]
-            date = formatter.date(from: updatedAt)
-        }
-        guard let date else { return nil }
+        guard let date = parseISO(updatedAt) else { return nil }
         return max(0, Int(now.timeIntervalSince(date) / 86400))
+    }
+
+    /// Instante ISO 8601, con o sin fracción de segundo (kodo escribe
+    /// milisegundos; Plane, microsegundos).
+    static func parseISO(_ iso: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
     }
 
     /// Etiqueta visible del semáforo (vocabulario de kodo).

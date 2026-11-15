@@ -296,7 +296,8 @@ struct PortfolioCard: View {
     /// Antigüedad de la narrativa: un resumen viejo debe notarse.
     private var footer: some View {
         let days = Portfolio.ageInDays(updatedAt: entry.updatedAt, now: Date())
-        let stale = (days ?? 0) > Portfolio.staleDays
+        let unreported = app.portfolioStats(for: entry)?.unreported ?? 0
+        let stale = (days ?? 0) > Portfolio.staleDays || unreported > 0
         let age = switch days {
         case nil: "fecha desconocida"
         case 0: "hoy"
@@ -307,9 +308,12 @@ struct PortfolioCard: View {
             if stale {
                 Image(systemName: "exclamationmark.triangle.fill")
             }
-            Text("Actualizado \(age)" + (entry.updatedBy.map { " · \($0)" } ?? ""))
+            Text(unreported > 0
+                ? "Actualizado \(age) · \(unreported) \(unreported == 1 ? "entrega" : "entregas") sin reflejar"
+                : "Actualizado \(age)" + (entry.updatedBy.map { " · \($0)" } ?? ""))
                 .lineLimit(1)
         }
+        .help(unreported > 0 ? "Hay tareas completadas en Plane después de la última actualización de la ficha" : "")
         .font(.system(size: 9 * fs))
         .foregroundStyle(stale ? AnyShapeStyle(.orange) : app.theme.secondaryStyle)
     }
