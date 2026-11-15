@@ -18,6 +18,8 @@ struct WorkItem: Codable, Identifiable, Hashable, Sendable {
     var startDate: String?
     var targetDate: String?
     let descriptionHtml: String?
+    /// Instante ISO 8601 en que Plane la dio por completada; nil si sigue abierta.
+    var completedAt: String? = nil
 
     var priorityRank: Int {
         switch priority {

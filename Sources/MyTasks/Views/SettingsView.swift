@@ -66,6 +66,7 @@ struct SettingsView: View {
                     Text("Todas las tareas").tag("all")
                     Text("Solo urgentes").tag("urgent")
                     Text("Solo vencidas").tag("overdue")
+                    Text("Proyectos que piden atención").tag("attention")
                     Text("Oculto").tag("hidden")
                 }
                 Picker("Atajo global del panel", selection: $app.settings.hotKeyID) {

@@ -22,6 +22,10 @@ struct PortfolioDetailView: View {
                 if let scope {
                     agenda(Portfolio.agenda(entry: entry, items: scope.items, states: scope.states, todayISO: today))
                     startedItems(scope)
+                    delivered(Portfolio.delivered(
+                        items: scope.items, states: scope.states,
+                        sinceISO: Portfolio.dayISO(today, minusDays: Portfolio.deliveredDays)
+                    ))
                 } else {
                     Text("Tareas de Plane: sin cargar")
                         .font(.system(size: 11 * fs))
@@ -103,6 +107,25 @@ struct PortfolioDetailView: View {
     private func startedItems(_ scope: (items: [WorkItem], states: [WorkItemState])) -> some View {
         ForEach(scope.states.filter { $0.group == "started" }) { state in
             stateSection(state, items: scope.items.filter { $0.state == state.id })
+        }
+    }
+
+    @ViewBuilder
+    private func delivered(_ items: [WorkItem]) -> some View {
+        if !items.isEmpty {
+            section("Entregado en los últimos \(Portfolio.deliveredDays) días (\(items.count))") {
+                ForEach(items) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(shortDate(String((item.completedAt ?? "").prefix(10))))
+                            .font(.system(size: 11 * fs, weight: .medium))
+                            .frame(width: 52 * fs, alignment: .leading)
+                        Text("\(project?.identifier ?? "")-\(item.sequenceId)")
+                            .font(.system(size: 10 * fs, design: .monospaced))
+                            .foregroundStyle(app.theme.secondaryStyle)
+                        taskOrText(item.name, itemID: item.id)
+                    }
+                }
+            }
         }
     }
 

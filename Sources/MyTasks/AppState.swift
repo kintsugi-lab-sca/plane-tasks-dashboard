@@ -230,6 +230,10 @@ final class AppState {
             visibleProjects.reduce(0) { total, project in
                 total + displayedItems(for: project).count { $0.priority == "urgent" }
             }
+        case "attention":
+            portfolio.count {
+                Portfolio.attention(entry: $0, stats: portfolioStats(for: $0), now: Date()) >= .overdue
+            }
         case "overdue":
             {
                 let today = GanttLayout.isoString(Date(), calendar: .current)
@@ -468,10 +472,12 @@ final class AppState {
 
     func portfolioStats(for entry: PortfolioEntry) -> Portfolio.Stats? {
         guard let scope = portfolioScope(for: entry) else { return nil }
-        return Portfolio.stats(
+        var stats = Portfolio.stats(
             items: scope.items, states: scope.states, memberIDs: nil,
             todayISO: GanttLayout.isoString(Date(), calendar: .current)
         )
+        stats.unreported = Portfolio.unreported(entry: entry, items: scope.items, states: scope.states)
+        return stats
     }
 
     /// Abre las tareas de la ficha en el tablero (kanban o gantt), filtradas
