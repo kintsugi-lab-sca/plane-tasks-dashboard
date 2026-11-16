@@ -1,11 +1,14 @@
 .PHONY: build run test app install clean
 
+# Desde macOS 27 las CLT no traen los macros de SwiftUI (ni Testing/XCTest): todo
+# se compila con el toolchain de Xcode. Se puede sobreescribir desde el entorno.
+export DEVELOPER_DIR ?= /Applications/Xcode.app
+
 build:
 	swift build
 
-# Los tests necesitan el toolchain de Xcode (las CLT no traen Testing/XCTest).
 test:
-	DEVELOPER_DIR=/Applications/Xcode.app swift test
+	swift test
 
 run: build
 	./.build/debug/MyTasks

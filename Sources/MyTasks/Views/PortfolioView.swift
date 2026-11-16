@@ -257,7 +257,8 @@ struct PortfolioCard: View {
         HStack(spacing: 10) {
             counter("checkmark.circle", stats.done, "Hechas")
             if stats.deliveredRecently > 0 {
-                Text("+\(stats.deliveredRecently)")
+                // Entre paréntesis: «2 +1» a secas se leía como una suma.
+                Text(named ? "(\(stats.deliveredRecently) esta semana)" : "(+\(stats.deliveredRecently))")
                     .fixedSize()
                     .padding(.leading, -7)
                     .help("Entregadas en los últimos \(Portfolio.deliveredDays) días")
