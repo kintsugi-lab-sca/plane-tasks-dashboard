@@ -70,15 +70,36 @@ struct PortfolioBoard: View {
 
     /// Columna de miniaturas del maestro-detalle (mismo orden que la rejilla).
     private func sidebar(selected: PortfolioEntry) -> some View {
-        ScrollView {
-            VStack(spacing: 6) {
-                ForEach(active + (selected.archived ? [selected] : [])) { entry in
-                    PortfolioMiniCard(entry: entry, isSelected: entry.slug == selected.slug)
-                        .matchedGeometryEffect(id: entry.slug, in: cardSpace)
-                        .onTapGesture { select(entry.slug == selected.slug ? nil : entry.slug) }
+        VStack(spacing: 0) {
+            // Volver a la rejilla, fijo sobre la lista para que no se pierda al
+            // hacer scroll.
+            Button {
+                select(nil)
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.left")
+                    Text("Todas las tarjetas")
+                    Spacer()
                 }
+                .font(.system(size: 11 * fs, weight: .medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
             }
-            .padding(8)
+            .buttonStyle(.plain)
+            .foregroundStyle(app.theme.accent.map(AnyShapeStyle.init) ?? AnyShapeStyle(.tint))
+            .help("Volver a la vista de tarjetas (Esc)")
+            Divider()
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(active + (selected.archived ? [selected] : [])) { entry in
+                        PortfolioMiniCard(entry: entry, isSelected: entry.slug == selected.slug)
+                            .matchedGeometryEffect(id: entry.slug, in: cardSpace)
+                            .onTapGesture { select(entry.slug == selected.slug ? nil : entry.slug) }
+                    }
+                }
+                .padding(8)
+            }
         }
         .frame(width: 230 * fs)
     }
