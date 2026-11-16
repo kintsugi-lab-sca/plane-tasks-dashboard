@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// Ficha de detalle de un proyecto del portafolio (popover): situación,
-/// agenda, tareas en curso y cronología completa de pasos.
+/// Ficha de detalle de un proyecto del portafolio: situación, agenda, tareas
+/// por estado, entregado, reuniones y correos, y cronología de pasos. Ocupa el
+/// panel derecho del maestro-detalle de `PortfolioBoard`.
 struct PortfolioDetailView: View {
     @Environment(AppState.self) private var app
-    @Environment(\.colorScheme) private var systemColorScheme
     let entry: PortfolioEntry
     /// Abre el tablero de la ficha en el modo dado ("kanban" | "gantt").
     let onOpenBoard: (String) -> Void
+    /// Vuelve a la rejilla de tarjetas.
+    let onClose: () -> Void
 
     private var fs: CGFloat { CGFloat(app.settings.fontScale) }
     private var project: Project? { app.projects.first { $0.id == entry.plane.projectId } }
@@ -34,16 +36,14 @@ struct PortfolioDetailView: View {
                 events
                 steps
             }
-            .padding(14)
+            .padding(16)
+            // Tope de ancho de lectura: en ventana grande las líneas no se
+            // estiran de lado a lado.
+            .frame(maxWidth: 860 * fs, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(width: 460 * fs)
-        .frame(minHeight: 220, maxHeight: 600)
-        // Mismo temado que WorkItemDetailView: el popover vive en su propia ventana.
-        .foregroundStyle(app.theme.primaryStyle)
-        .fontDesign(app.theme.monospaced ? .monospaced : .default)
-        .environment(\.colorScheme, app.theme.colorScheme ?? systemColorScheme)
-        .presentationBackground(app.theme.background ?? Color(nsColor: .windowBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onExitCommand(perform: onClose)
     }
 
     private var header: some View {
@@ -59,6 +59,11 @@ struct PortfolioDetailView: View {
             Spacer()
             Button("Tareas") { onOpenBoard("kanban") }
             Button("Cronograma") { onOpenBoard("gantt") }
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .help("Volver a las tarjetas (Esc)")
         }
         .controlSize(.small)
     }

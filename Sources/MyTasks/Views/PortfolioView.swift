@@ -2,14 +2,30 @@ import SwiftUI
 
 /// Vista de portafolio: una tarjeta por proyecto en marcha. La narrativa viene
 /// de la ficha que escribe kodo; los contadores y vencimientos, de Plane.
+///
+/// Dos disposiciones: rejilla de tarjetas, o —con una ficha seleccionada—
+/// maestro-detalle: las tarjetas pasan a una columna de miniaturas a la
+/// izquierda y el detalle ocupa el resto. `matchedGeometryEffect` hace que
+/// cada tarjeta viaje hasta su miniatura en vez de aparecer de golpe.
 struct PortfolioBoard: View {
     @Environment(AppState.self) private var app
     /// true en la ventana redimensionable; false en el panel (alto fijo).
     var fillsHeight = false
 
     @State private var showArchived = false
+    @State private var selectedSlug: String?
+    @Namespace private var cardSpace
 
     private var fs: CGFloat { CGFloat(app.settings.fontScale) }
+    /// Ficha abierta en el detalle; nil si no hay selección o la ficha ya no existe.
+    private var selected: PortfolioEntry? {
+        app.portfolio.first { $0.slug == selectedSlug }
+    }
+
+    private func select(_ slug: String?) {
+        withAnimation(.snappy(duration: 0.32)) { selectedSlug = slug }
+    }
+
     /// Activas, primero las que piden atención (bloqueo > vencidas > ficha
     /// antigua o sin situación) y dentro de cada nivel por nombre.
     private var active: [PortfolioEntry] {
@@ -29,6 +45,45 @@ struct PortfolioBoard: View {
     private var archived: [PortfolioEntry] { app.portfolio.filter(\.archived) }
 
     var body: some View {
+        Group {
+            if let selected {
+                HStack(spacing: 0) {
+                    sidebar(selected: selected)
+                    Divider()
+                    PortfolioDetailView(
+                        entry: selected,
+                        onOpenBoard: { mode in
+                            withAnimation(.snappy(duration: 0.25)) { app.openPortfolio(selected, mode: mode) }
+                        },
+                        onClose: { select(nil) }
+                    )
+                    .id(selected.slug)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            } else {
+                cardGrid
+            }
+        }
+        .frame(height: fillsHeight ? nil : panelBoardHeight)
+        .frame(maxHeight: fillsHeight ? .infinity : panelBoardHeight)
+    }
+
+    /// Columna de miniaturas del maestro-detalle (mismo orden que la rejilla).
+    private func sidebar(selected: PortfolioEntry) -> some View {
+        ScrollView {
+            VStack(spacing: 6) {
+                ForEach(active + (selected.archived ? [selected] : [])) { entry in
+                    PortfolioMiniCard(entry: entry, isSelected: entry.slug == selected.slug)
+                        .matchedGeometryEffect(id: entry.slug, in: cardSpace)
+                        .onTapGesture { select(entry.slug == selected.slug ? nil : entry.slug) }
+                }
+            }
+            .padding(8)
+        }
+        .frame(width: 230 * fs)
+    }
+
+    private var cardGrid: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 if app.portfolio.isEmpty {
@@ -56,8 +111,6 @@ struct PortfolioBoard: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: fillsHeight ? nil : panelBoardHeight)
-        .frame(maxHeight: fillsHeight ? .infinity : panelBoardHeight)
     }
 
     /// Mismo alto que el kanban en el panel.
@@ -72,7 +125,8 @@ struct PortfolioBoard: View {
             spacing: 8
         ) {
             ForEach(entries) { entry in
-                PortfolioCard(entry: entry)
+                PortfolioCard(entry: entry) { select(entry.slug) }
+                    .matchedGeometryEffect(id: entry.slug, in: cardSpace)
             }
         }
     }
@@ -95,9 +149,10 @@ struct PortfolioBoard: View {
 struct PortfolioCard: View {
     @Environment(AppState.self) private var app
     let entry: PortfolioEntry
+    /// Abre la ficha en el detalle.
+    let onSelect: () -> Void
 
     @State private var hovering = false
-    @State private var showDetail = false
 
     private var fs: CGFloat { CGFloat(app.settings.fontScale) }
 
@@ -167,13 +222,7 @@ struct PortfolioCard: View {
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(app.theme.cardBorderStyle))
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onHover { hovering = $0 }
-        .onTapGesture { showDetail = true }
-        .popover(isPresented: $showDetail, arrowEdge: .trailing) {
-            PortfolioDetailView(entry: entry) { mode in
-                showDetail = false
-                open(mode)
-            }
-        }
+        .onTapGesture(perform: onSelect)
         .contextMenu {
             Button("Ver tareas") { open("kanban") }
             Button("Ver cronograma") { open("gantt") }
@@ -204,15 +253,7 @@ struct PortfolioCard: View {
         }
     }
 
-    private var statusColor: Color {
-        switch entry.status {
-        case "on_track": .green
-        case "at_risk": .orange
-        case "blocked": .red
-        case "waiting": .blue
-        default: .gray
-        }
-    }
+    private var statusColor: Color { entry.statusColor }
 
     private func line(icon: String, text: String, style: AnyShapeStyle? = nil) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -323,5 +364,81 @@ struct PortfolioCard: View {
     private func shortDate(_ iso: String) -> String {
         guard let date = GanttLayout.dayFormatter(calendar: .current).date(from: iso) else { return iso }
         return date.formatted(.dateTime.day().month(.abbreviated))
+    }
+}
+
+extension PortfolioEntry {
+    /// Color del semáforo (vocabulario de kodo).
+    var statusColor: Color {
+        switch status {
+        case "on_track": .green
+        case "at_risk": .orange
+        case "blocked": .red
+        case "waiting": .blue
+        default: .gray
+        }
+    }
+}
+
+/// Tarjeta en miniatura para la columna del maestro-detalle: proyecto, nombre,
+/// semáforo, aviso de atención y titular en una línea.
+struct PortfolioMiniCard: View {
+    @Environment(AppState.self) private var app
+    let entry: PortfolioEntry
+    let isSelected: Bool
+
+    @State private var hovering = false
+
+    private var fs: CGFloat { CGFloat(app.settings.fontScale) }
+
+    var body: some View {
+        let attention = Portfolio.attention(entry: entry, stats: app.portfolioStats(for: entry), now: Date())
+        VStack(alignment: .leading, spacing: 2) {
+            if entry.plane.module != nil,
+               let project = app.projects.first(where: { $0.id == entry.plane.projectId }) {
+                Text(project.name.uppercased())
+                    .font(.system(size: 8 * fs, weight: .semibold))
+                    .foregroundStyle(app.theme.secondaryStyle)
+                    .lineLimit(1)
+            }
+            HStack(spacing: 5) {
+                if entry.status != nil {
+                    Circle()
+                        .fill(entry.statusColor)
+                        .frame(width: 6 * fs, height: 6 * fs)
+                        .help(Portfolio.statusLabel(entry.status) ?? "")
+                }
+                Text(entry.name)
+                    .font(.system(size: 11 * fs, weight: .bold))
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                switch attention {
+                case .blocked:
+                    Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red).help("Bloqueado")
+                case .overdue:
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).help("Tareas vencidas o en riesgo")
+                case .stale:
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help("Ficha atrasada o sin situación")
+                case .none:
+                    EmptyView()
+                }
+            }
+            .font(.system(size: 9 * fs))
+            Text(entry.headline ?? "Sin situación registrada")
+                .font(.system(size: 9 * fs))
+                .foregroundStyle(app.theme.secondaryStyle)
+                .lineLimit(1)
+        }
+        .padding(7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(hovering || isSelected ? 0.07 : 0), in: RoundedRectangle(cornerRadius: 6))
+        .background(app.theme.cardStyle, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(isSelected ? AnyShapeStyle(app.theme.accent ?? .accentColor) : app.theme.cardBorderStyle,
+                              lineWidth: isSelected ? 1.5 : 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .onHover { hovering = $0 }
     }
 }
