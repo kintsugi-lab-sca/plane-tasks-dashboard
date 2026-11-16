@@ -171,13 +171,19 @@ enum Portfolio {
 
     /// Día ISO (`yyyy-MM-dd`) de hace `days` días respecto a `todayISO`.
     static func dayISO(_ todayISO: String, minusDays days: Int) -> String {
-        let calendar = Calendar(identifier: .gregorian)
-        let formatter = GanttLayout.dayFormatter(calendar: calendar)
-        guard let today = formatter.date(from: todayISO),
-              let date = calendar.date(byAdding: .day, value: -days, to: today)
+        guard let today = dayFormatter.date(from: todayISO),
+              let date = dayFormatter.calendar.date(byAdding: .day, value: -days, to: today)
         else { return todayISO }
-        return formatter.string(from: date)
+        return dayFormatter.string(from: date)
     }
+
+    /// Día de hoy (`yyyy-MM-dd`) en el calendario local.
+    static func todayISO(now: Date = Date()) -> String {
+        dayFormatter.string(from: now)
+    }
+
+    // Compartido por el mismo motivo que los formateadores ISO de abajo.
+    private nonisolated(unsafe) static let dayFormatter = GanttLayout.dayFormatter(calendar: .current)
 
     /// Tareas completadas desde `sinceISO` (día incluido), la más reciente
     /// primero. `items` ya viene restringido a la ficha. La comparación usa el
@@ -199,8 +205,14 @@ enum Portfolio {
     static func unreported(entry: PortfolioEntry, items: [WorkItem], states: [WorkItemState]) -> Int {
         guard let updated = parseISO(entry.updatedAt) else { return 0 }
         let completed = Set(states.filter { $0.group == "completed" }.map(\.id))
+        // Descarte barato antes de parsear: el día escrito en `completed_at`
+        // (en el huso que sea) dista como mucho uno del día UTC, así que todo
+        // lo anterior a la víspera de la ficha no puede ser posterior a ella.
+        let cutoffDay = String(isoPlain.string(from: updated.addingTimeInterval(-86400)).prefix(10))
         return items.count { item in
-            guard completed.contains(item.state), let at = item.completedAt.flatMap(parseISO) else { return false }
+            guard completed.contains(item.state), let raw = item.completedAt, raw.prefix(10) >= cutoffDay,
+                  let at = parseISO(raw)
+            else { return false }
             return at > updated
         }
     }
@@ -312,10 +324,18 @@ enum Portfolio {
     /// Instante ISO 8601, con o sin fracción de segundo (kodo escribe
     /// milisegundos; Plane, microsegundos).
     static func parseISO(_ iso: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return fractional.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        isoFractional.date(from: iso) ?? isoPlain.date(from: iso)
     }
+
+    // Compartidos: crear un ISO8601DateFormatter por llamada costaba ~2 s por
+    // repintado del portafolio (uno por tarea completada y ficha). La clase es
+    // segura entre hilos y no se muta tras configurarla.
+    private nonisolated(unsafe) static let isoPlain = ISO8601DateFormatter()
+    private nonisolated(unsafe) static let isoFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     /// Etiqueta visible del semáforo (vocabulario de kodo).
     static func statusLabel(_ status: String?) -> String? {
