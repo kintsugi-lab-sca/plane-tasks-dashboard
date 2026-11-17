@@ -16,34 +16,81 @@ struct PortfolioDetailView: View {
 
     var body: some View {
         let scope = app.portfolioScope(for: entry)
-        let today = GanttLayout.isoString(Date(), calendar: .current)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                header
-                situation
-                if let scope {
-                    agenda(Portfolio.agenda(entry: entry, items: scope.items, states: scope.states, todayISO: today))
-                    startedItems(scope)
-                    delivered(Portfolio.delivered(
-                        items: scope.items, states: scope.states,
-                        sinceISO: Portfolio.dayISO(today, minusDays: Portfolio.deliveredDays)
-                    ))
-                } else {
-                    Text("Tareas de Plane: sin cargar")
-                        .font(.system(size: 11 * fs))
-                        .foregroundStyle(app.theme.secondaryStyle)
+        let today = Portfolio.todayISO()
+        // Responsive: el contenido se reparte en columnas según el ancho real
+        // del panel, en vez de dejar media pantalla vacía en ventana grande.
+        GeometryReader { geo in
+            let columns = Self.columnCount(width: geo.size.width, fontScale: fs)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    header
+                    situation
+                        // Tope de lectura solo para el titular: es prosa.
+                        .frame(maxWidth: 900 * fs, alignment: .leading)
+                    switch columns {
+                    case 3:
+                        HStack(alignment: .top, spacing: 28) {
+                            column { agendaBlock(scope, today: today); events }
+                            column { workBlock(scope, today: today) }
+                            column { steps }
+                        }
+                    case 2:
+                        HStack(alignment: .top, spacing: 28) {
+                            column { agendaBlock(scope, today: today); events; steps }
+                            column { workBlock(scope, today: today) }
+                        }
+                    default:
+                        column {
+                            agendaBlock(scope, today: today)
+                            workBlock(scope, today: today)
+                            events
+                            steps
+                        }
+                    }
                 }
-                events
-                steps
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(16)
-            // Tope de ancho de lectura: en ventana grande las líneas no se
-            // estiran de lado a lado.
-            .frame(maxWidth: 860 * fs, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onExitCommand(perform: onClose)
+    }
+
+    /// Columnas del detalle para un ancho dado: una en el panel de la barra de
+    /// menús, dos en ventana mediana, tres en pantalla completa.
+    nonisolated static func columnCount(width: CGFloat, fontScale: CGFloat) -> Int {
+        if width >= 1500 * fontScale { return 3 }
+        if width >= 950 * fontScale { return 2 }
+        return 1
+    }
+
+    private func column(@ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 12, content: content)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// Hitos de la ficha y vencimientos de tareas.
+    @ViewBuilder
+    private func agendaBlock(_ scope: (items: [WorkItem], states: [WorkItemState])?, today: String) -> some View {
+        if let scope {
+            agenda(Portfolio.agenda(entry: entry, items: scope.items, states: scope.states, todayISO: today))
+        }
+    }
+
+    /// Tareas por estado y lo entregado en la semana.
+    @ViewBuilder
+    private func workBlock(_ scope: (items: [WorkItem], states: [WorkItemState])?, today: String) -> some View {
+        if let scope {
+            startedItems(scope)
+            delivered(Portfolio.delivered(
+                items: scope.items, states: scope.states,
+                sinceISO: Portfolio.dayISO(today, minusDays: Portfolio.deliveredDays)
+            ))
+        } else {
+            Text("Tareas de Plane: sin cargar")
+                .font(.system(size: 11 * fs))
+                .foregroundStyle(app.theme.secondaryStyle)
+        }
     }
 
     private var header: some View {
