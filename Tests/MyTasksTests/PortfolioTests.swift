@@ -256,6 +256,14 @@ struct PortfolioTests {
         #expect(Portfolio.load(from: dir).filter { $0.name == "DEV" }.count == 2)
     }
 
+    @Test func columnasDelDetalleSegunElAncho() {
+        #expect(PortfolioDetailView.columnCount(width: 600, fontScale: 1) == 1)
+        #expect(PortfolioDetailView.columnCount(width: 1000, fontScale: 1) == 2)
+        #expect(PortfolioDetailView.columnCount(width: 2000, fontScale: 1) == 3)
+        // Con la letra más grande hace falta más ancho para el mismo reparto.
+        #expect(PortfolioDetailView.columnCount(width: 1000, fontScale: 1.3) == 1)
+    }
+
     @Test func antiguedadEnDias() throws {
         let formatter = ISO8601DateFormatter()
         let now = try #require(formatter.date(from: "2026-11-22T18:00:00Z"))
