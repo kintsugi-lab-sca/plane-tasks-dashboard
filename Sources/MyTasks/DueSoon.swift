@@ -39,6 +39,31 @@ enum DueSoon {
         }
     }
 
+    /// Avisos de hitos de las fichas del portafolio que caen hoy o mañana:
+    /// fechas pactadas que no son tareas de Plane. Misma deduplicación que las
+    /// tareas, con clave "hito:slug:etiqueta|fecha" (compatible con `prune`).
+    static func milestoneAlerts(
+        entries: [PortfolioEntry],
+        todayISO: String,
+        tomorrowISO: String,
+        alreadyNotified: Set<String>
+    ) -> [Alert] {
+        entries.filter { !$0.archived }.flatMap { entry in
+            entry.dates.compactMap { milestone -> Alert? in
+                let title: String
+                switch milestone.date {
+                case todayISO: title = "Hito hoy"
+                case tomorrowISO: title = "Hito mañana"
+                default: return nil
+                }
+                let label = milestone.label.replacingOccurrences(of: "|", with: "/")
+                let key = "hito:\(entry.slug):\(label)|\(milestone.date)"
+                guard !alreadyNotified.contains(key) else { return nil }
+                return Alert(itemID: entry.slug, title: title, body: "\(entry.name) · \(milestone.label)", dueKey: key)
+            }
+        }
+    }
+
     /// Poda las claves de fechas ya pasadas (la comparación lexicográfica de
     /// "yyyy-MM-dd" es cronológica); una clave malformada se descarta.
     static func prune(_ keys: Set<String>, todayISO: String) -> Set<String> {

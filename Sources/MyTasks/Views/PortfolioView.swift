@@ -60,6 +60,12 @@ struct PortfolioBoard: View {
                     .id(selected.slug)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
+            } else if app.portfolioShowsAgenda {
+                PortfolioAgendaView { slug in
+                    app.portfolioShowsAgenda = false
+                    select(slug)
+                }
+                .transition(.opacity)
             } else {
                 cardGrid
             }
@@ -461,5 +467,90 @@ struct PortfolioMiniCard: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 6))
         .onHover { hovering = $0 }
+    }
+}
+
+/// Agenda conjunta del portafolio: hitos y vencimientos de todas las fichas,
+/// primero lo vencido y después un grupo por día hasta 14 días vista.
+struct PortfolioAgendaView: View {
+    @Environment(AppState.self) private var app
+    /// Abre la ficha de un proyecto.
+    let onSelect: (String) -> Void
+
+    private var fs: CGFloat { CGFloat(app.settings.fontScale) }
+
+    var body: some View {
+        let days = app.portfolioWeekAgenda
+        let today = Portfolio.todayISO()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if days.isEmpty {
+                    Text("Nada vencido ni con fecha en los próximos 14 días.")
+                        .font(.system(size: 12 * fs))
+                        .foregroundStyle(app.theme.secondaryStyle)
+                }
+                ForEach(days) { day in
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title(for: day, today: today))
+                            .font(.system(size: 11 * fs, weight: .bold))
+                            .foregroundStyle(day.date == nil ? AnyShapeStyle(.red)
+                                : day.date == today ? AnyShapeStyle(app.theme.accent ?? .accentColor)
+                                : app.theme.secondaryStyle)
+                        Divider()
+                        ForEach(day.rows) { row in
+                            agendaRow(row, showDate: day.date == nil)
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: 1000 * fs, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func agendaRow(_ item: Portfolio.WeekRow, showDate: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if showDate {
+                Text(shortDate(item.row.date))
+                    .font(.system(size: 11 * fs, weight: .medium))
+                    .frame(width: 52 * fs, alignment: .leading)
+            }
+            Image(systemName: item.row.itemID == nil ? "flag" : "checklist")
+                .font(.system(size: 9 * fs))
+                .help(item.row.itemID == nil ? "Hito" : "Vencimiento de tarea")
+            Button {
+                onSelect(item.slug)
+            } label: {
+                Text(item.entryName)
+                    .font(.system(size: 10 * fs, weight: .semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Color.primary.opacity(0.08), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("Abrir la ficha")
+            Text(item.row.label)
+                .font(.system(size: 11 * fs))
+                .lineLimit(2)
+        }
+        .foregroundStyle(item.row.overdue ? AnyShapeStyle(.red) : app.theme.primaryStyle)
+    }
+
+    private func title(for day: Portfolio.WeekDay, today: String) -> String {
+        guard let date = day.date else { return "VENCIDO (\(day.rows.count))" }
+        guard let parsed = GanttLayout.dayFormatter(calendar: .current).date(from: date) else { return date }
+        let label = parsed.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)).uppercased()
+        switch Portfolio.daysBetween(today, date) {
+        case 0: return "HOY · \(label)"
+        case 1: return "MAÑANA · \(label)"
+        default: return label
+        }
+    }
+
+    private func shortDate(_ iso: String) -> String {
+        guard let date = GanttLayout.dayFormatter(calendar: .current).date(from: iso) else { return iso }
+        return date.formatted(.dateTime.day().month(.abbreviated))
     }
 }

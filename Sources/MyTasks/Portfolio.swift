@@ -132,6 +132,76 @@ enum Portfolio {
         return slug
     }
 
+    /// Campos de situación editables a mano desde la app.
+    struct Situation: Equatable {
+        var headline = ""
+        var nextStep = ""
+        var waitingOn = ""
+        /// Vacío = sin estado.
+        var status = ""
+
+        init(headline: String = "", nextStep: String = "", waitingOn: String = "", status: String = "") {
+            self.headline = headline
+            self.nextStep = nextStep
+            self.waitingOn = waitingOn
+            self.status = status
+        }
+
+        init(_ entry: PortfolioEntry) {
+            self.init(
+                headline: entry.headline ?? "", nextStep: entry.nextStep ?? "",
+                waitingOn: entry.waitingOn ?? "", status: entry.status ?? ""
+            )
+        }
+    }
+
+    /// Estados del semáforo en orden de menú (vocabulario de kodo).
+    static let statuses = ["on_track", "at_risk", "blocked", "waiting", "paused", "done"]
+
+    /// Escribe la situación editada a mano. Texto vacío = campo sin valor.
+    /// Conserva el resto del fichero y marca la ficha como actualizada ahora
+    /// por `mytasks`. Misma limpieza que kodo: una sola línea, sin espacios
+    /// sobrantes.
+    static func updateSituation(
+        _ situation: Situation,
+        slug: String,
+        in directory: URL,
+        now: Date = Date()
+    ) throws {
+        let url = directory.appending(path: "\(slug).json")
+        guard var object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        func value(_ text: String) -> Any {
+            let clean = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            return clean.isEmpty ? NSNull() : clean
+        }
+        object["headline"] = value(situation.headline)
+        object["next_step"] = value(situation.nextStep)
+        object["waiting_on"] = value(situation.waitingOn)
+        object["status"] = statuses.contains(situation.status) ? situation.status : NSNull()
+        object["updated_at"] = isoFractional.string(from: now)
+        object["updated_by"] = "mytasks"
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: url, options: .atomic)
+    }
+
+    /// Fecha (`yyyy-MM-dd`) del último barrido completo de reuniones y correo
+    /// que dejó el orquestador en `.last-sweep`; nil si nunca ha corrido.
+    static func lastSweep(in directory: URL) -> String? {
+        guard let raw = try? String(contentsOf: directory.appending(path: ".last-sweep"), encoding: .utf8) else {
+            return nil
+        }
+        let day = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return dayFormatter.date(from: day) == nil ? nil : day
+    }
+
+    /// Días naturales entre dos días ISO; nil si alguno no es una fecha.
+    static func daysBetween(_ fromISO: String, _ toISO: String) -> Int? {
+        guard let from = dayFormatter.date(from: fromISO), let to = dayFormatter.date(from: toISO) else { return nil }
+        return dayFormatter.calendar.dateComponents([.day], from: from, to: to).day
+    }
+
     /// Cambia solo `archived`, conservando el resto del fichero tal cual
     /// (incluidos campos que esta versión no conozca). Escritura atómica.
     static func setArchived(_ archived: Bool, slug: String, in directory: URL) throws {
@@ -269,6 +339,49 @@ enum Portfolio {
             }
         }
         return stats
+    }
+
+    /// Fila de la agenda conjunta: una fecha de una ficha concreta.
+    struct WeekRow: Equatable, Identifiable {
+        let slug: String
+        let entryName: String
+        let row: AgendaRow
+
+        var id: String { "\(slug)|\(row.id)" }
+    }
+
+    /// Día de la agenda conjunta; `date == nil` agrupa lo ya vencido.
+    struct WeekDay: Equatable, Identifiable {
+        let date: String?
+        let rows: [WeekRow]
+
+        var id: String { date ?? "vencidas" }
+    }
+
+    /// Agenda que cruza todas las fichas: primero lo vencido y después un
+    /// grupo por día hasta `days` días vista. Dentro de cada día, por ficha.
+    static func weekAgenda(
+        _ perEntry: [(entry: PortfolioEntry, rows: [AgendaRow])],
+        todayISO: String,
+        days: Int = 14
+    ) -> [WeekDay] {
+        let limit = dayISO(todayISO, minusDays: -days)
+        let all = perEntry.flatMap { pair in
+            pair.rows.map { WeekRow(slug: pair.entry.slug, entryName: pair.entry.name, row: $0) }
+        }
+        let overdue = all.filter(\.row.overdue).sorted { $0.row.date < $1.row.date }
+        let upcoming = all.filter { !$0.row.overdue && $0.row.date <= limit }
+        let byDay = Dictionary(grouping: upcoming, by: \.row.date)
+        var result: [WeekDay] = overdue.isEmpty ? [] : [WeekDay(date: nil, rows: overdue)]
+        for day in byDay.keys.sorted() {
+            let rows = (byDay[day] ?? []).sorted {
+                $0.entryName != $1.entryName
+                    ? $0.entryName.localizedCaseInsensitiveCompare($1.entryName) == .orderedAscending
+                    : ($0.row.itemID == nil && $1.row.itemID != nil)
+            }
+            result.append(WeekDay(date: day, rows: rows))
+        }
+        return result
     }
 
     /// Próxima fecha relevante: el hito de la ficha o el vencimiento de tarea
