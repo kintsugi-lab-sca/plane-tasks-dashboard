@@ -470,37 +470,35 @@ struct PortfolioMiniCard: View {
     }
 }
 
-/// Agenda conjunta del portafolio: hitos y vencimientos de todas las fichas,
-/// primero lo vencido y después un grupo por día hasta 14 días vista.
+/// Agenda conjunta del portafolio, con forma de calendario: una fila por día
+/// de los próximos 14 (también los vacíos, para que se lea como una semana y no
+/// como una lista), la fecha grande a la izquierda y a la derecha lo que cae
+/// ese día. Los hitos van primero y destacados; las tareas, debajo. Lo vencido
+/// se recoge en una barra plegada para que la agenda abra en HOY.
 struct PortfolioAgendaView: View {
     @Environment(AppState.self) private var app
     /// Abre la ficha de un proyecto.
     let onSelect: (String) -> Void
 
+    @State private var showOverdue = false
+
     private var fs: CGFloat { CGFloat(app.settings.fontScale) }
+    private var accent: AnyShapeStyle { AnyShapeStyle(app.theme.accent ?? .accentColor) }
 
     var body: some View {
-        let days = app.portfolioWeekAgenda
+        let groups = app.portfolioWeekAgenda
         let today = Portfolio.todayISO()
+        let byDay = Dictionary(uniqueKeysWithValues: groups.compactMap { day in day.date.map { ($0, day.rows) } })
+        let overdue = groups.first { $0.date == nil }?.rows ?? []
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                if days.isEmpty {
-                    Text("Nada vencido ni con fecha en los próximos 14 días.")
-                        .font(.system(size: 12 * fs))
-                        .foregroundStyle(app.theme.secondaryStyle)
+            VStack(alignment: .leading, spacing: 0) {
+                if !overdue.isEmpty {
+                    overdueBar(overdue)
                 }
-                ForEach(days) { day in
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(title(for: day, today: today))
-                            .font(.system(size: 11 * fs, weight: .bold))
-                            .foregroundStyle(day.date == nil ? AnyShapeStyle(.red)
-                                : day.date == today ? AnyShapeStyle(app.theme.accent ?? .accentColor)
-                                : app.theme.secondaryStyle)
-                        Divider()
-                        ForEach(day.rows) { row in
-                            agendaRow(row, showDate: day.date == nil)
-                        }
-                    }
+                ForEach(0...Portfolio.agendaDays, id: \.self) { offset in
+                    let date = Portfolio.dayISO(today, minusDays: -offset)
+                    dayRow(date: date, offset: offset, rows: byDay[date] ?? [])
+                    Divider().opacity(0.5)
                 }
             }
             .padding(14)
@@ -509,20 +507,88 @@ struct PortfolioAgendaView: View {
         }
     }
 
-    private func agendaRow(_ item: Portfolio.WeekRow, showDate: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if showDate {
-                Text(shortDate(item.row.date))
-                    .font(.system(size: 11 * fs, weight: .medium))
-                    .frame(width: 52 * fs, alignment: .leading)
-            }
-            Image(systemName: item.row.itemID == nil ? "flag" : "checklist")
-                .font(.system(size: 9 * fs))
-                .help(item.row.itemID == nil ? "Hito" : "Vencimiento de tarea")
+    /// Barra plegable con las tareas vencidas (cada una con su fecha).
+    private func overdueBar(_ rows: [Portfolio.WeekRow]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
             Button {
-                onSelect(item.slug)
+                withAnimation(.snappy(duration: 0.2)) { showOverdue.toggle() }
             } label: {
-                Text(item.entryName)
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("\(rows.count) \(rows.count == 1 ? "tarea vencida" : "tareas vencidas")")
+                        .fontWeight(.semibold)
+                    Image(systemName: showOverdue ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9 * fs))
+                    Spacer()
+                }
+                .font(.system(size: 11 * fs))
+                .foregroundStyle(.red)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if showOverdue {
+                ForEach(rows) { row in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(shortDate(row.row.date))
+                            .font(.system(size: 11 * fs, weight: .medium))
+                            .foregroundStyle(.red)
+                            .frame(width: 52 * fs, alignment: .leading)
+                        item(row)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.bottom, 10)
+    }
+
+    /// Un día: fecha a la izquierda, lo que cae ese día a la derecha.
+    private func dayRow(date: String, offset: Int, rows: [Portfolio.WeekRow]) -> some View {
+        let parsed = GanttLayout.dayFormatter(calendar: .current).date(from: date)
+        let weekend = parsed.map { Calendar.current.isDateInWeekend($0) } ?? false
+        let isToday = offset == 0
+        return HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(isToday ? "HOY" : offset == 1 ? "MAÑANA"
+                    : (parsed?.formatted(.dateTime.weekday(.abbreviated)) ?? "").uppercased())
+                    .font(.system(size: 9 * fs, weight: .semibold))
+                Text(parsed?.formatted(.dateTime.day().month(.abbreviated)) ?? date)
+                    .font(.system(size: 14 * fs, weight: .bold))
+            }
+            .foregroundStyle(isToday ? accent : rows.isEmpty ? AnyShapeStyle(.tertiary) : app.theme.primaryStyle)
+            .frame(width: 78 * fs, alignment: .leading)
+            VStack(alignment: .leading, spacing: 5) {
+                if rows.isEmpty {
+                    Text("—")
+                        .font(.system(size: 11 * fs))
+                        .foregroundStyle(.tertiary)
+                }
+                ForEach(rows) { row in
+                    item(row)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 3)
+        }
+        .padding(.vertical, rows.isEmpty ? 4 : 8)
+        .opacity(weekend && rows.isEmpty ? 0.5 : 1)
+    }
+
+    /// Hito (bandera, destacado) o vencimiento de tarea, con su proyecto.
+    private func item(_ row: Portfolio.WeekRow) -> some View {
+        let isMilestone = row.row.itemID == nil
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: isMilestone ? "flag.fill" : "checklist")
+                .font(.system(size: 9 * fs))
+                .foregroundStyle(isMilestone ? accent : app.theme.secondaryStyle)
+                .frame(width: 12 * fs)
+                .help(isMilestone ? "Hito" : "Vencimiento de tarea")
+            Button {
+                onSelect(row.slug)
+            } label: {
+                Text(row.entryName)
                     .font(.system(size: 10 * fs, weight: .semibold))
                     .lineLimit(1)
                     .padding(.horizontal, 6)
@@ -531,21 +597,11 @@ struct PortfolioAgendaView: View {
             }
             .buttonStyle(.plain)
             .help("Abrir la ficha")
-            Text(item.row.label)
-                .font(.system(size: 11 * fs))
+            Text(row.row.label)
+                .font(.system(size: (isMilestone ? 12 : 11) * fs, weight: isMilestone ? .semibold : .regular))
+                .foregroundStyle(row.row.overdue ? AnyShapeStyle(.red)
+                    : isMilestone ? app.theme.primaryStyle : app.theme.secondaryStyle)
                 .lineLimit(2)
-        }
-        .foregroundStyle(item.row.overdue ? AnyShapeStyle(.red) : app.theme.primaryStyle)
-    }
-
-    private func title(for day: Portfolio.WeekDay, today: String) -> String {
-        guard let date = day.date else { return "VENCIDO (\(day.rows.count))" }
-        guard let parsed = GanttLayout.dayFormatter(calendar: .current).date(from: date) else { return date }
-        let label = parsed.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)).uppercased()
-        switch Portfolio.daysBetween(today, date) {
-        case 0: return "HOY · \(label)"
-        case 1: return "MAÑANA · \(label)"
-        default: return label
         }
     }
 

@@ -358,12 +358,16 @@ enum Portfolio {
         var id: String { date ?? "vencidas" }
     }
 
+    /// Días vista de la agenda conjunta (hoy incluido aparte).
+    static let agendaDays = 14
+
     /// Agenda que cruza todas las fichas: primero lo vencido y después un
-    /// grupo por día hasta `days` días vista. Dentro de cada día, por ficha.
+    /// grupo por día hasta `days` días vista. Dentro de cada día, los hitos
+    /// antes que las tareas y, a igualdad, por ficha.
     static func weekAgenda(
         _ perEntry: [(entry: PortfolioEntry, rows: [AgendaRow])],
         todayISO: String,
-        days: Int = 14
+        days: Int = agendaDays
     ) -> [WeekDay] {
         let limit = dayISO(todayISO, minusDays: -days)
         let all = perEntry.flatMap { pair in
@@ -374,10 +378,10 @@ enum Portfolio {
         let byDay = Dictionary(grouping: upcoming, by: \.row.date)
         var result: [WeekDay] = overdue.isEmpty ? [] : [WeekDay(date: nil, rows: overdue)]
         for day in byDay.keys.sorted() {
-            let rows = (byDay[day] ?? []).sorted {
-                $0.entryName != $1.entryName
-                    ? $0.entryName.localizedCaseInsensitiveCompare($1.entryName) == .orderedAscending
-                    : ($0.row.itemID == nil && $1.row.itemID != nil)
+            let rows = (byDay[day] ?? []).sorted { a, b in
+                let aMilestone = a.row.itemID == nil, bMilestone = b.row.itemID == nil
+                if aMilestone != bMilestone { return aMilestone }
+                return a.entryName.localizedCaseInsensitiveCompare(b.entryName) == .orderedAscending
             }
             result.append(WeekDay(date: day, rows: rows))
         }
