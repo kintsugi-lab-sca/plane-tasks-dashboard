@@ -21,17 +21,26 @@ final class AppState {
     }
 
     var projects: [Project] = []
-    var itemsByProject: [String: [WorkItem]] = [:]
-    var statesByProject: [String: [WorkItemState]] = [:]
-    var modulesByProject: [String: [Module]] = [:]
-    var moduleItemIDs: [String: Set<String>] = [:]
+    var itemsByProject: [String: [WorkItem]] = [:] { didSet { portfolioDataVersion &+= 1 } }
+    var statesByProject: [String: [WorkItemState]] = [:] { didSet { portfolioDataVersion &+= 1 } }
+    var modulesByProject: [String: [Module]] = [:] { didSet { portfolioDataVersion &+= 1 } }
+    var moduleItemIDs: [String: Set<String>] = [:] { didSet { portfolioDataVersion &+= 1 } }
     var cyclesByProject: [String: [Cycle]] = [:]
     var cycleItemIDs: [String: Set<String>] = [:]
     var labelsByProject: [String: [WorkItemLabel]] = [:]
     var membersByProject: [String: [UserLite]] = [:]
     var myUserID: String?
     /// Fichas del portafolio (~/.kodo/portfolio), recargadas al cambiar el directorio.
-    var portfolio: [PortfolioEntry] = []
+    var portfolio: [PortfolioEntry] = [] { didSet { portfolioDataVersion &+= 1 } }
+    /// Sube con cada cambio de un dato del que dependen los contadores del
+    /// portafolio. Leerla registra la dependencia de la vista aunque el valor
+    /// salga de la caché.
+    private(set) var portfolioDataVersion = 0
+    /// Contadores por ficha para la versión y el día actuales. Cada repintado
+    /// del portafolio los pide varias veces por ficha (orden, tarjeta, pie,
+    /// miniatura); sin caché eso recorre todas las tareas del proyecto cada vez.
+    @ObservationIgnored
+    private var portfolioStatsCache: (version: Int, day: String, stats: [String: Portfolio.Stats]) = (-1, "", [:])
     /// Filtro de búsqueda del panel (client-side, no persistido).
     var searchText = ""
     /// Filtro por prioridad exacta (valor API: "urgent"…"none"); nil = todas.
@@ -471,12 +480,16 @@ final class AppState {
     }
 
     func portfolioStats(for entry: PortfolioEntry) -> Portfolio.Stats? {
+        let version = portfolioDataVersion
+        let today = Portfolio.todayISO()
+        if portfolioStatsCache.version != version || portfolioStatsCache.day != today {
+            portfolioStatsCache = (version, today, [:])
+        }
+        if let cached = portfolioStatsCache.stats[entry.slug] { return cached }
         guard let scope = portfolioScope(for: entry) else { return nil }
-        var stats = Portfolio.stats(
-            items: scope.items, states: scope.states, memberIDs: nil,
-            todayISO: GanttLayout.isoString(Date(), calendar: .current)
-        )
+        var stats = Portfolio.stats(items: scope.items, states: scope.states, memberIDs: nil, todayISO: today)
         stats.unreported = Portfolio.unreported(entry: entry, items: scope.items, states: scope.states)
+        portfolioStatsCache.stats[entry.slug] = stats
         return stats
     }
 
