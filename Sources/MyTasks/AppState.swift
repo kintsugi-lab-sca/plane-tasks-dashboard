@@ -39,6 +39,10 @@ final class AppState {
     /// Contadores por ficha para la versión y el día actuales. Cada repintado
     /// del portafolio los pide varias veces por ficha (orden, tarjeta, pie,
     /// miniatura); sin caché eso recorre todas las tareas del proyecto cada vez.
+    /// true = el portafolio muestra la agenda conjunta en vez de las tarjetas.
+    var portfolioShowsAgenda = false
+    /// Día del último barrido completo de reuniones y correo (`.last-sweep`).
+    var portfolioLastSweep: String?
     @ObservationIgnored
     private var portfolioStatsCache: (version: Int, day: String, stats: [String: Portfolio.Stats]) = (-1, "", [:])
     /// Filtro de búsqueda del panel (client-side, no persistido).
@@ -339,6 +343,7 @@ final class AppState {
             await loadCycles(force: true)
             await loadCycleMemberships(force: true)
             await loadPortfolioMemberships()
+            portfolioLastSweep = Portfolio.lastSweep(in: Portfolio.directory)
             notifyDueSoon()
             lastError = nil
         } catch {
@@ -429,18 +434,48 @@ final class AppState {
     private func watchPortfolio() {
         let directory = Portfolio.directory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        portfolio = Portfolio.load(from: directory)
+        reloadPortfolio()
         let fd = open(directory.path, O_EVTONLY)
         guard fd >= 0 else { return }
         let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: .main)
         source.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
-                self?.portfolio = Portfolio.load(from: directory)
+                self?.reloadPortfolio()
             }
         }
         source.setCancelHandler { close(fd) }
         source.resume()
         portfolioWatcher = source
+    }
+
+    /// Relee las fichas y la marca del último barrido. La marca se reescribe en
+    /// sitio (no cambia el directorio), así que también se relee en cada refresh.
+    private func reloadPortfolio() {
+        portfolio = Portfolio.load(from: Portfolio.directory)
+        portfolioLastSweep = Portfolio.lastSweep(in: Portfolio.directory)
+    }
+
+    /// Guarda la situación editada a mano en la ficha.
+    func savePortfolioSituation(_ situation: Portfolio.Situation, for entry: PortfolioEntry) {
+        do {
+            try Portfolio.updateSituation(situation, slug: entry.slug, in: Portfolio.directory)
+            reloadPortfolio()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Agenda conjunta de todas las fichas activas con datos cargados.
+    var portfolioWeekAgenda: [Portfolio.WeekDay] {
+        _ = portfolioDataVersion
+        let today = Portfolio.todayISO()
+        let perEntry = portfolio.filter { !$0.archived }.map { entry in
+            let scope = portfolioScope(for: entry)
+            return (entry: entry, rows: Portfolio.agenda(
+                entry: entry, items: scope?.items ?? [], states: scope?.states ?? [], todayISO: today
+            ))
+        }
+        return Portfolio.weekAgenda(perEntry, todayISO: today)
     }
 
     /// Módulo de Plane al que apunta la ficha (se resuelve por nombre).
@@ -568,6 +603,12 @@ final class AppState {
                 let url = items.first { $0.id == alert.itemID }.flatMap { webURL(for: $0, in: project) }
                 Notifier.shared.notify(title: alert.title, body: alert.body, url: url)
             }
+        }
+        for alert in DueSoon.milestoneAlerts(
+            entries: portfolio, todayISO: today, tomorrowISO: tomorrow, alreadyNotified: notified
+        ) {
+            notified.insert(alert.dueKey)
+            Notifier.shared.notify(title: alert.title, body: alert.body, url: nil)
         }
         defaults.set(Array(notified), forKey: "dueNotifiedKeys")
     }

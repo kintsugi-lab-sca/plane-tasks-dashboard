@@ -256,6 +256,101 @@ struct PortfolioTests {
         #expect(Portfolio.load(from: dir).filter { $0.name == "DEV" }.count == 2)
     }
 
+    @Test func agendaConjuntaAgrupaVencidoYPorDia() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(fixture.utf8).write(to: dir.appending(path: "aparcago.json"))
+        let aparca = try #require(Portfolio.load(from: dir).first)
+        func row(_ date: String, _ label: String, item: String? = nil, overdue: Bool = false) -> Portfolio.AgendaRow {
+            Portfolio.AgendaRow(date: date, label: label, itemID: item, overdue: overdue)
+        }
+        let days = Portfolio.weekAgenda([
+            (entry: aparca, rows: [
+                row("2026-11-01", "Tarea vencida", item: "t1", overdue: true),
+                row("2026-11-14", "Tarea del 14", item: "t2"),
+                row("2026-11-14", "Hito del 14"),
+                row("2026-12-01", "Fuera de la ventana"),
+            ]),
+        ], todayISO: today, days: 14)
+        #expect(days.map(\.date) == [nil, "2026-11-14"])
+        #expect(days[0].rows.map(\.row.label) == ["Tarea vencida"])
+        // Mismo día y misma ficha: el hito antes que la tarea.
+        #expect(days[1].rows.map(\.row.label) == ["Hito del 14", "Tarea del 14"])
+        #expect(days[1].rows.first?.entryName == "Aparca&Go")
+        #expect(Portfolio.weekAgenda([], todayISO: today).isEmpty)
+    }
+
+    @Test func editarSituacionAManoConservaElResto() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "aparcago.json")
+        try Data(fixture.utf8).write(to: url)
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-11-17T09:00:00Z"))
+
+        let edited = Portfolio.Situation(
+            headline: "  Validado\npor el cliente ", nextStep: "", waitingOn: "Pau", status: "on_track"
+        )
+        try Portfolio.updateSituation(edited, slug: "aparcago", in: dir, now: now)
+
+        let entry = try #require(Portfolio.load(from: dir).first)
+        #expect(entry.headline == "Validado por el cliente")
+        #expect(entry.nextStep == nil)
+        #expect(entry.waitingOn == "Pau")
+        #expect(entry.status == "on_track")
+        #expect(entry.updatedBy == "mytasks")
+        #expect(Portfolio.ageInDays(updatedAt: entry.updatedAt, now: now) == 0)
+        #expect(entry.blockers == ["Acceso a GA4"])
+        #expect(entry.steps.count == 1)
+        let raw = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        #expect(raw["campo_futuro"] as? Int == 42)
+
+        // Un estado fuera del vocabulario se guarda como «sin estado».
+        try Portfolio.updateSituation(Portfolio.Situation(status: "verde"), slug: "aparcago", in: dir, now: now)
+        #expect(Portfolio.load(from: dir).first?.status == nil)
+        #expect(Portfolio.Situation(entry) == Portfolio.Situation(
+            headline: "Validado por el cliente", nextStep: "", waitingOn: "Pau", status: "on_track"
+        ))
+    }
+
+    @Test func ultimoBarrido() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(Portfolio.lastSweep(in: dir) == nil)
+        try Data("2026-11-10\n".utf8).write(to: dir.appending(path: ".last-sweep"))
+        #expect(Portfolio.lastSweep(in: dir) == "2026-11-10")
+        #expect(Portfolio.daysBetween("2026-11-10", today) == 2)
+        try Data("ayer".utf8).write(to: dir.appending(path: ".last-sweep"))
+        #expect(Portfolio.lastSweep(in: dir) == nil)
+        // La marca no es una ficha.
+        #expect(Portfolio.load(from: dir).isEmpty)
+    }
+
+    @Test func avisosDeHitosDeFicha() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let dated = fixture.replacingOccurrences(of: "\"date\": \"2026-12-01\"", with: "\"date\": \"2026-11-13\"")
+        try Data(dated.utf8).write(to: dir.appending(path: "aparcago.json"))
+        let entries = Portfolio.load(from: dir)
+
+        let tomorrow = DueSoon.milestoneAlerts(
+            entries: entries, todayISO: today, tomorrowISO: "2026-11-13", alreadyNotified: []
+        )
+        #expect(tomorrow.map(\.title) == ["Hito mañana"])
+        #expect(tomorrow.first?.body == "Aparca&Go · Entrega")
+        let key = try #require(tomorrow.first?.dueKey)
+        #expect(key == "hito:aparcago:Entrega|2026-11-13")
+        // Ya avisado → nada; y la clave sobrevive a la poda hasta que pasa la fecha.
+        #expect(DueSoon.milestoneAlerts(
+            entries: entries, todayISO: today, tomorrowISO: "2026-11-13", alreadyNotified: [key]
+        ).isEmpty)
+        #expect(DueSoon.prune([key], todayISO: "2026-11-13") == [key])
+        #expect(DueSoon.prune([key], todayISO: "2026-11-14").isEmpty)
+        // Otro día → nada.
+        #expect(DueSoon.milestoneAlerts(
+            entries: entries, todayISO: "2026-11-20", tomorrowISO: "2026-11-21", alreadyNotified: []
+        ).isEmpty)
+    }
+
     @Test func columnasDelDetalleSegunElAncho() {
         #expect(PortfolioDetailView.columnCount(width: 600, fontScale: 1) == 1)
         #expect(PortfolioDetailView.columnCount(width: 1000, fontScale: 1) == 2)

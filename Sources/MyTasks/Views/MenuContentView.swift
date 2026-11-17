@@ -67,6 +67,7 @@ struct MenuContentView: View {
             if isPortfolio {
                 Text("Portafolio")
                     .font(.system(size: 13 * fs, weight: .semibold))
+                sweepIndicator
             } else {
                 projectPicker
                 modulePicker
@@ -79,6 +80,14 @@ struct MenuContentView: View {
             Spacer()
             viewToggle
             if isPortfolio {
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { app.portfolioShowsAgenda.toggle() }
+                } label: {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(app.portfolioShowsAgenda
+                            ? AnyShapeStyle(app.theme.accent ?? .accentColor) : app.theme.primaryStyle)
+                }
+                .help(app.portfolioShowsAgenda ? "Volver a las tarjetas" : "Agenda de los próximos 14 días")
                 Button {
                     showAddPortfolioMenu()
                 } label: {
@@ -170,6 +179,24 @@ struct MenuContentView: View {
                 .contentShape(Capsule())
         }
         .help(help)
+    }
+
+    /// Cuándo barrió el orquestador reuniones y correo por última vez: dice de
+    /// un vistazo si el portafolio se sigue alimentando solo.
+    private var sweepIndicator: some View {
+        let today = Portfolio.todayISO()
+        let days = app.portfolioLastSweep.flatMap { Portfolio.daysBetween($0, today) }
+        let text = switch days {
+        case nil: "sin barrido diario"
+        case 0: "barrido hoy"
+        case 1: "barrido ayer"
+        case let d?: "barrido hace \(d) días"
+        }
+        let late = (days ?? 99) > 1
+        return Text(text)
+            .font(.system(size: 10 * fs))
+            .foregroundStyle(late ? AnyShapeStyle(.orange) : app.theme.secondaryStyle)
+            .help("Último barrido completo de reuniones y correo del orquestador (/kodo-sweep sin argumentos)")
     }
 
     /// Alta de fichas: NSMenu on-demand con los proyectos visibles y sus

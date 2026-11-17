@@ -11,6 +11,9 @@ struct PortfolioDetailView: View {
     /// Vuelve a la rejilla de tarjetas.
     let onClose: () -> Void
 
+    /// Borrador de la situación mientras se edita a mano; nil = solo lectura.
+    @State private var draft: Portfolio.Situation?
+
     private var fs: CGFloat { CGFloat(app.settings.fontScale) }
     private var project: Project? { app.projects.first { $0.id == entry.plane.projectId } }
 
@@ -106,6 +109,14 @@ struct PortfolioDetailView: View {
             Spacer()
             Button("Tareas") { onOpenBoard("kanban") }
             Button("Cronograma") { onOpenBoard("gantt") }
+            Button {
+                draft = draft == nil ? Portfolio.Situation(entry) : nil
+            } label: {
+                Image(systemName: "pencil")
+                    .foregroundStyle(draft == nil ? app.theme.primaryStyle : AnyShapeStyle(app.theme.accent ?? .accentColor))
+            }
+            .buttonStyle(.plain)
+            .help("Editar la situación a mano")
             Button(action: onClose) {
                 Image(systemName: "xmark")
             }
@@ -115,7 +126,59 @@ struct PortfolioDetailView: View {
         .controlSize(.small)
     }
 
+    @ViewBuilder
     private var situation: some View {
+        if draft != nil {
+            situationEditor
+        } else {
+            situationText
+        }
+    }
+
+    /// Edición a mano de titular, siguiente paso, espera y estado. Bloqueos e
+    /// hitos siguen siendo cosa de `kodo portfolio set`.
+    private var situationEditor: some View {
+        let binding = Binding(get: { draft ?? Portfolio.Situation(entry) }, set: { draft = $0 })
+        return VStack(alignment: .leading, spacing: 6) {
+            editorField("Situación", text: binding.headline, lines: 2...4)
+            editorField("Siguiente", text: binding.nextStep, lines: 1...3)
+            editorField("Esperando a", text: binding.waitingOn, lines: 1...2)
+            HStack(spacing: 8) {
+                Picker("Estado", selection: binding.status) {
+                    Text("Sin estado").tag("")
+                    ForEach(Portfolio.statuses, id: \.self) { status in
+                        Text(Portfolio.statusLabel(status) ?? status).tag(status)
+                    }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                Spacer()
+                Button("Cancelar") { draft = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button("Guardar") {
+                    if let draft { app.savePortfolioSituation(draft, for: entry) }
+                    draft = nil
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .controlSize(.small)
+        }
+        .font(.system(size: 12 * fs))
+    }
+
+    private func editorField(_ label: String, text: Binding<String>, lines: ClosedRange<Int>) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(.system(size: 10 * fs, weight: .semibold))
+                .foregroundStyle(app.theme.secondaryStyle)
+                .frame(width: 78 * fs, alignment: .trailing)
+            TextField(label, text: text, axis: .vertical)
+                .lineLimit(lines)
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private var situationText: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(entry.headline ?? "Sin situación registrada")
                 .font(.system(size: 13 * fs))
