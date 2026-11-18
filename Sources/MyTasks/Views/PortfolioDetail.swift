@@ -76,7 +76,10 @@ struct PortfolioDetailView: View {
     @ViewBuilder
     private func agendaBlock(_ scope: (items: [WorkItem], states: [WorkItemState])?, today: String) -> some View {
         if let scope {
-            agenda(Portfolio.agenda(entry: entry, items: scope.items, states: scope.states, todayISO: today))
+            agenda(Portfolio.agenda(
+                entry: entry, items: scope.items, states: scope.states, todayISO: today,
+                reviewState: app.portfolioReviewState
+            ))
         }
     }
 
@@ -216,9 +219,7 @@ struct PortfolioDetailView: View {
                                 .strikethrough(row.done)
                                 .lineLimit(2)
                         } else {
-                            Image(systemName: "checklist")
-                                .font(.system(size: 9 * fs))
-                                .help("Vencimiento de tarea")
+                            StateDot(color: row.stateColor, name: row.stateName, size: 7 * fs)
                             taskOrText(row.label, itemID: row.itemID)
                         }
                     }
@@ -260,7 +261,7 @@ struct PortfolioDetailView: View {
     @ViewBuilder
     private func stateSection(_ state: WorkItemState, items: [WorkItem]) -> some View {
         if !items.isEmpty {
-            section("\(state.name) (\(items.count))") {
+            section("\(state.name) (\(items.count))", stateColor: state.color) {
                 ForEach(items) { item in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("\(project?.identifier ?? "")-\(item.sequenceId)")
@@ -326,12 +327,19 @@ struct PortfolioDetailView: View {
 
     // MARK: - Piezas
 
-    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+    private func section(
+        _ title: String, stateColor: String? = nil, @ViewBuilder content: () -> some View
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Divider()
-            Text(title.uppercased())
-                .font(.system(size: 9 * fs, weight: .semibold))
-                .foregroundStyle(app.theme.secondaryStyle)
+            HStack(spacing: 5) {
+                if let stateColor {
+                    StateDot(color: stateColor, name: nil, size: 7 * fs)
+                }
+                Text(title.uppercased())
+                    .font(.system(size: 9 * fs, weight: .semibold))
+                    .foregroundStyle(app.theme.secondaryStyle)
+            }
             content()
         }
     }
@@ -386,5 +394,20 @@ struct MilestoneToggle: View {
         }
         .buttonStyle(.plain)
         .help(done ? "Cumplido — clic para desmarcar" : "Marcar el hito como cumplido")
+    }
+}
+
+/// Punto con el color que el estado tiene en Plane. El rojo queda reservado
+/// para lo vencido; el estado de una tarea se lee por su color de Plane.
+struct StateDot: View {
+    let color: String?
+    let name: String?
+    let size: CGFloat
+
+    var body: some View {
+        Circle()
+            .fill(color.flatMap { Color(hex: $0) } ?? .gray)
+            .frame(width: size, height: size)
+            .help(name ?? "")
     }
 }

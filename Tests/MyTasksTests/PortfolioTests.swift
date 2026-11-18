@@ -256,6 +256,47 @@ struct PortfolioTests {
         #expect(Portfolio.load(from: dir).filter { $0.name == "DEV" }.count == 2)
     }
 
+    @Test func enRevisionNoCuentaComoVencida() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(fixture.utf8).write(to: dir.appending(path: "aparcago.json"))
+        let entry = try #require(Portfolio.load(from: dir).first)
+        let items = [
+            makeItem(id: "enRevision", state: "review", targetDate: "2026-11-01"),
+            makeItem(id: "enCurso", state: "doing", targetDate: "2026-11-01"),
+        ]
+        // El fixture llama al estado «In Review»; kodo lo declara como «In review».
+        let withReview = Portfolio.stats(
+            items: items, states: states, memberIDs: nil, todayISO: today, reviewState: "In review"
+        )
+        #expect(withReview.overdue == 1)
+        // Sin estado declarado no se adivina nada: las dos vencen.
+        #expect(Portfolio.stats(items: items, states: states, memberIDs: nil, todayISO: today).overdue == 2)
+
+        let rows = Portfolio.agenda(
+            entry: entry, items: items, states: states, todayISO: today, reviewState: "In review"
+        ).filter { $0.itemID != nil }
+        #expect(rows.first { $0.itemID == "enRevision" }?.overdue == false)
+        #expect(rows.first { $0.itemID == "enCurso" }?.overdue == true)
+        #expect(rows.first { $0.itemID == "enRevision" }?.stateName == "In Review")
+        #expect(rows.first { $0.itemID == "enCurso" }?.stateColor == "#000000")
+        // Un «Done» que se llamara igual no es revisión: solo cuenta el grupo started.
+        let done = WorkItemState(id: "d", name: "In review", color: "#000000", group: "completed", sequence: 9)
+        #expect(Portfolio.isReview(done, reviewState: "In review") == false)
+    }
+
+    @Test func leeElEstadoDeRevisionDeKodo() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let config = dir.appending(path: "config.json")
+        #expect(Portfolio.reviewStateName(kodoConfig: config) == nil)
+        try Data(#"{"providers":{"plane":{"states":{"trigger":"Todo","review":"In review","done":"Done"}}}}"#.utf8)
+            .write(to: config)
+        #expect(Portfolio.reviewStateName(kodoConfig: config) == "In review")
+        try Data(#"{"providers":{"plane":{}}}"#.utf8).write(to: config)
+        #expect(Portfolio.reviewStateName(kodoConfig: config) == nil)
+    }
+
     @Test func hitosCumplidosYVencidos() throws {
         let dir = try tempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

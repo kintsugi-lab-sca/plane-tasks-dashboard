@@ -589,11 +589,8 @@ struct PortfolioAgendaView: View {
                 .foregroundStyle(row.row.overdue ? AnyShapeStyle(.red) : accent)
                 .frame(width: 12 * fs)
             } else {
-                Image(systemName: "checklist")
-                    .font(.system(size: 9 * fs))
-                    .foregroundStyle(app.theme.secondaryStyle)
+                StateDot(color: row.row.stateColor, name: row.row.stateName, size: 7 * fs)
                     .frame(width: 12 * fs)
-                    .help("Vencimiento de tarea")
             }
             Button {
                 onSelect(row.slug)
