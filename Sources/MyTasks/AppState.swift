@@ -465,6 +465,16 @@ final class AppState {
         }
     }
 
+    /// Marca o desmarca como cumplido un hito de la ficha.
+    func setPortfolioMilestone(slug: String, date: String, label: String, done: Bool) {
+        do {
+            try Portfolio.setMilestoneDone(done, date: date, label: label, slug: slug, in: Portfolio.directory)
+            reloadPortfolio()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     /// Agenda conjunta de todas las fichas activas con datos cargados.
     var portfolioWeekAgenda: [Portfolio.WeekDay] {
         _ = portfolioDataVersion
