@@ -205,12 +205,25 @@ struct PortfolioDetailView: View {
                         Text(shortDate(row.date))
                             .font(.system(size: 11 * fs, weight: .medium))
                             .frame(width: 52 * fs, alignment: .leading)
-                        Image(systemName: row.itemID == nil ? "flag" : "checklist")
-                            .font(.system(size: 9 * fs))
-                            .help(row.itemID == nil ? "Hito" : "Vencimiento de tarea")
-                        taskOrText(row.label, itemID: row.itemID)
+                        if row.itemID == nil {
+                            MilestoneToggle(done: row.done, size: 11 * fs) {
+                                app.setPortfolioMilestone(
+                                    slug: entry.slug, date: row.date, label: row.label, done: !row.done
+                                )
+                            }
+                            Text(row.label)
+                                .font(.system(size: 11 * fs, weight: .medium))
+                                .strikethrough(row.done)
+                                .lineLimit(2)
+                        } else {
+                            Image(systemName: "checklist")
+                                .font(.system(size: 9 * fs))
+                                .help("Vencimiento de tarea")
+                            taskOrText(row.label, itemID: row.itemID)
+                        }
                     }
-                    .foregroundStyle(row.overdue ? AnyShapeStyle(.red) : app.theme.primaryStyle)
+                    .foregroundStyle(row.overdue ? AnyShapeStyle(.red)
+                        : row.done ? app.theme.secondaryStyle : app.theme.primaryStyle)
                 }
             }
         }
@@ -357,5 +370,21 @@ struct PortfolioDetailView: View {
     private func shortDate(_ iso: String) -> String {
         guard let date = GanttLayout.dayFormatter(calendar: .current).date(from: iso) else { return iso }
         return date.formatted(.dateTime.day().month(.abbreviated))
+    }
+}
+
+/// Casilla de un hito: círculo vacío si está pendiente, marcado si se cumplió.
+struct MilestoneToggle: View {
+    let done: Bool
+    let size: CGFloat
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: size))
+        }
+        .buttonStyle(.plain)
+        .help(done ? "Cumplido — clic para desmarcar" : "Marcar el hito como cumplido")
     }
 }

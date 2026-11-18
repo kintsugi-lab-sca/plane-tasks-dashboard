@@ -13,6 +13,10 @@ struct PortfolioEntry: Codable, Identifiable, Hashable, Sendable {
     struct Milestone: Codable, Hashable, Sendable {
         let date: String
         let label: String
+        /// Instante en que se marcó como cumplido; nil = pendiente.
+        var doneAt: String? = nil
+
+        var isDone: Bool { doneAt != nil }
     }
 
     struct Step: Codable, Hashable, Sendable {
@@ -186,6 +190,35 @@ enum Portfolio {
         try data.write(to: url, options: .atomic)
     }
 
+    /// Marca (o desmarca) como cumplido el hito de esa fecha y etiqueta. Mismo
+    /// campo `done_at` que `kodo portfolio set --done-date`. Cuenta como
+    /// actualización de la ficha.
+    static func setMilestoneDone(
+        _ done: Bool,
+        date: String,
+        label: String,
+        slug: String,
+        in directory: URL,
+        now: Date = Date()
+    ) throws {
+        let url = directory.appending(path: "\(slug).json")
+        guard var object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any],
+              var dates = object["dates"] as? [[String: Any]],
+              let index = dates.firstIndex(where: { $0["date"] as? String == date && $0["label"] as? String == label })
+        else { throw CocoaError(.fileReadCorruptFile) }
+        let stamp = isoFractional.string(from: now)
+        if done {
+            if dates[index]["done_at"] as? String == nil { dates[index]["done_at"] = stamp }
+        } else {
+            dates[index]["done_at"] = nil
+        }
+        object["dates"] = dates
+        object["updated_at"] = stamp
+        object["updated_by"] = "mytasks"
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: url, options: .atomic)
+    }
+
     /// Fecha (`yyyy-MM-dd`) del último barrido completo de reuniones y correo
     /// que dejó el orquestador en `.last-sweep`; nil si nunca ha corrido.
     static func lastSweep(in directory: URL) -> String? {
@@ -300,7 +333,9 @@ enum Portfolio {
     static func attention(entry: PortfolioEntry, stats: Stats?, now: Date) -> Attention {
         if entry.archived || entry.status == "paused" || entry.status == "done" { return .none }
         if !entry.blockers.isEmpty || entry.status == "blocked" { return .blocked }
-        if (stats?.overdue ?? 0) > 0 || entry.status == "at_risk" { return .overdue }
+        let today = todayISO(now: now)
+        let missedMilestone = entry.dates.contains { !$0.isDone && $0.date < today }
+        if (stats?.overdue ?? 0) > 0 || missedMilestone || entry.status == "at_risk" { return .overdue }
         let age = ageInDays(updatedAt: entry.updatedAt, now: now) ?? 0
         if entry.headline == nil || age > staleDays || (stats?.unreported ?? 0) > 0 { return .stale }
         return .none
@@ -374,7 +409,7 @@ enum Portfolio {
             pair.rows.map { WeekRow(slug: pair.entry.slug, entryName: pair.entry.name, row: $0) }
         }
         let overdue = all.filter(\.row.overdue).sorted { $0.row.date < $1.row.date }
-        let upcoming = all.filter { !$0.row.overdue && $0.row.date <= limit }
+        let upcoming = all.filter { !$0.row.overdue && $0.row.date >= todayISO && $0.row.date <= limit }
         let byDay = Dictionary(grouping: upcoming, by: \.row.date)
         var result: [WeekDay] = overdue.isEmpty ? [] : [WeekDay(date: nil, rows: overdue)]
         for day in byDay.keys.sorted() {
@@ -391,7 +426,7 @@ enum Portfolio {
     /// Próxima fecha relevante: el hito de la ficha o el vencimiento de tarea
     /// más cercano, lo que llegue antes (a igualdad, el hito).
     static func upcoming(entry: PortfolioEntry, stats: Stats?, todayISO: String) -> PortfolioEntry.Milestone? {
-        let milestone = entry.dates.filter { $0.date >= todayISO }.min { $0.date < $1.date }
+        let milestone = entry.dates.filter { !$0.isDone && $0.date >= todayISO }.min { $0.date < $1.date }
         let due = stats?.nextDue.map { PortfolioEntry.Milestone(date: $0, label: "Vence tarea") }
         switch (milestone, due) {
         case let (m?, d?): return d.date < m.date ? d : m
@@ -406,13 +441,20 @@ enum Portfolio {
         /// Tarea de Plane a la que corresponde; nil si es un hito de la ficha.
         let itemID: String?
         let overdue: Bool
+        /// Hito marcado como cumplido.
+        var done = false
 
         var id: String { "\(date)|\(itemID ?? label)" }
     }
 
-    /// Agenda cronológica: hitos futuros de la ficha y tareas activas con fecha
-    /// límite (las vencidas también, marcadas). `items` ya viene restringido a
-    /// la ficha. A igualdad de fecha, el hito va antes.
+    /// Días que un hito cumplido sigue viéndose en la ficha tras su fecha.
+    static let doneMilestoneDays = 7
+
+    /// Agenda cronológica: hitos de la ficha y tareas activas con fecha límite.
+    /// Un hito pendiente cuya fecha pasó cuenta como vencido (hasta que se
+    /// marque cumplido); uno cumplido se sigue viendo una semana, como
+    /// historia. `items` ya viene restringido a la ficha. A igualdad de fecha,
+    /// el hito va antes.
     static func agenda(
         entry: PortfolioEntry,
         items: [WorkItem],
@@ -420,9 +462,15 @@ enum Portfolio {
         todayISO: String
     ) -> [AgendaRow] {
         let active = Set(states.filter(\.isActive).map(\.id))
+        let keepDoneSince = dayISO(todayISO, minusDays: doneMilestoneDays)
         let milestones = entry.dates
-            .filter { $0.date >= todayISO }
-            .map { AgendaRow(date: $0.date, label: $0.label, itemID: nil, overdue: false) }
+            .filter { !$0.isDone || $0.date >= keepDoneSince }
+            .map {
+                AgendaRow(
+                    date: $0.date, label: $0.label, itemID: nil,
+                    overdue: !$0.isDone && $0.date < todayISO, done: $0.isDone
+                )
+            }
         let tasks = items.compactMap { item -> AgendaRow? in
             guard active.contains(item.state), let target = item.targetDate else { return nil }
             return AgendaRow(date: target, label: item.name, itemID: item.id, overdue: target < todayISO)

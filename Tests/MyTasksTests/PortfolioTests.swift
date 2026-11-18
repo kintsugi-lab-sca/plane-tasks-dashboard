@@ -256,6 +256,53 @@ struct PortfolioTests {
         #expect(Portfolio.load(from: dir).filter { $0.name == "DEV" }.count == 2)
     }
 
+    @Test func hitosCumplidosYVencidos() throws {
+        let dir = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "aparcago.json")
+        let dated = fixture.replacingOccurrences(
+            of: "[{ \"date\": \"2026-12-01\", \"label\": \"Entrega\" }]",
+            with: "[{ \"date\": \"2026-11-10\", \"label\": \"Demo\" }, { \"date\": \"2026-11-12\", \"label\": \"Preview\" }]"
+        ).replacingOccurrences(of: "[\"Acceso a GA4\"]", with: "[]")
+        try Data(dated.utf8).write(to: url)
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-11-12T10:00:00Z"))
+        func load() throws -> PortfolioEntry { try #require(Portfolio.load(from: dir).first) }
+
+        // Un hito pendiente con la fecha pasada cuenta como vencido y pide atención.
+        var rows = Portfolio.agenda(entry: try load(), items: [], states: states, todayISO: today)
+        #expect(rows.map(\.overdue) == [true, false])
+        #expect(Portfolio.attention(entry: try load(), stats: Portfolio.Stats(), now: now) == .overdue)
+
+        try Portfolio.setMilestoneDone(true, date: "2026-11-10", label: "Demo", slug: "aparcago", in: dir, now: now)
+        try Portfolio.setMilestoneDone(true, date: today, label: "Preview", slug: "aparcago", in: dir, now: now)
+        var entry = try load()
+        #expect(entry.dates.map(\.isDone) == [true, true])
+        #expect(entry.updatedBy == "mytasks")
+        // Cumplidos: siguen en la ficha como historia, sin vencer, y dejan de pedir atención.
+        rows = Portfolio.agenda(entry: entry, items: [], states: states, todayISO: today)
+        #expect(rows.map(\.done) == [true, true])
+        #expect(rows.map(\.overdue) == [false, false])
+        #expect(Portfolio.attention(entry: entry, stats: Portfolio.Stats(), now: now) == .none)
+        #expect(Portfolio.upcoming(entry: entry, stats: nil, todayISO: today) == nil)
+        #expect(DueSoon.milestoneAlerts(
+            entries: [entry], todayISO: today, tomorrowISO: "2026-11-13", alreadyNotified: []
+        ).isEmpty)
+        // La agenda conjunta solo enseña el cumplido de hoy; el pasado no vuelve como día.
+        let week = Portfolio.weekAgenda([(entry: entry, rows: rows)], todayISO: today)
+        #expect(week.map(\.date) == [today])
+        // Pasada una semana, el cumplido antiguo deja de listarse.
+        #expect(Portfolio.agenda(entry: entry, items: [], states: states, todayISO: "2026-11-18").map(\.label) == ["Preview"])
+
+        try Portfolio.setMilestoneDone(false, date: today, label: "Preview", slug: "aparcago", in: dir, now: now)
+        entry = try load()
+        #expect(entry.dates.map(\.isDone) == [true, false])
+        let raw = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        #expect(raw["campo_futuro"] as? Int == 42)
+        #expect(throws: (any Error).self) {
+            try Portfolio.setMilestoneDone(true, date: "2026-01-01", label: "No existe", slug: "aparcago", in: dir)
+        }
+    }
+
     @Test func agendaConjuntaAgrupaVencidoYPorDia() throws {
         let dir = try tempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

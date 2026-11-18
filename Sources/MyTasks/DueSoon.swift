@@ -50,6 +50,7 @@ enum DueSoon {
     ) -> [Alert] {
         entries.filter { !$0.archived }.flatMap { entry in
             entry.dates.compactMap { milestone -> Alert? in
+                guard !milestone.isDone else { return nil }
                 let title: String
                 switch milestone.date {
                 case todayISO: title = "Hito hoy"

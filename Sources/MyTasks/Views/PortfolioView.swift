@@ -515,7 +515,7 @@ struct PortfolioAgendaView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                    Text("\(rows.count) \(rows.count == 1 ? "tarea vencida" : "tareas vencidas")")
+                    Text("\(rows.count) \(rows.count == 1 ? "vencida" : "vencidas")")
                         .fontWeight(.semibold)
                     Image(systemName: showOverdue ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9 * fs))
@@ -580,11 +580,21 @@ struct PortfolioAgendaView: View {
     private func item(_ row: Portfolio.WeekRow) -> some View {
         let isMilestone = row.row.itemID == nil
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: isMilestone ? "flag.fill" : "checklist")
-                .font(.system(size: 9 * fs))
-                .foregroundStyle(isMilestone ? accent : app.theme.secondaryStyle)
+            if isMilestone {
+                MilestoneToggle(done: row.row.done, size: 11 * fs) {
+                    app.setPortfolioMilestone(
+                        slug: row.slug, date: row.row.date, label: row.row.label, done: !row.row.done
+                    )
+                }
+                .foregroundStyle(row.row.overdue ? AnyShapeStyle(.red) : accent)
                 .frame(width: 12 * fs)
-                .help(isMilestone ? "Hito" : "Vencimiento de tarea")
+            } else {
+                Image(systemName: "checklist")
+                    .font(.system(size: 9 * fs))
+                    .foregroundStyle(app.theme.secondaryStyle)
+                    .frame(width: 12 * fs)
+                    .help("Vencimiento de tarea")
+            }
             Button {
                 onSelect(row.slug)
             } label: {
@@ -599,8 +609,9 @@ struct PortfolioAgendaView: View {
             .help("Abrir la ficha")
             Text(row.row.label)
                 .font(.system(size: (isMilestone ? 12 : 11) * fs, weight: isMilestone ? .semibold : .regular))
+                .strikethrough(row.row.done)
                 .foregroundStyle(row.row.overdue ? AnyShapeStyle(.red)
-                    : isMilestone ? app.theme.primaryStyle : app.theme.secondaryStyle)
+                    : isMilestone && !row.row.done ? app.theme.primaryStyle : app.theme.secondaryStyle)
                 .lineLimit(2)
         }
     }
