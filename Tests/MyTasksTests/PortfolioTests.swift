@@ -293,8 +293,22 @@ struct PortfolioTests {
         try Data(#"{"providers":{"plane":{"states":{"trigger":"Todo","review":"In review","done":"Done"}}}}"#.utf8)
             .write(to: config)
         #expect(Portfolio.reviewStateName(kodoConfig: config) == "In review")
+        #expect(Portfolio.kodoStateName("done", kodoConfig: config) == "Done")
         try Data(#"{"providers":{"plane":{}}}"#.utf8).write(to: config)
         #expect(Portfolio.reviewStateName(kodoConfig: config) == nil)
+    }
+
+    @Test func estadoDeDestinoAlDarPorHecha() {
+        let extra = states + [
+            WorkItemState(id: "released", name: "Released", color: "#000000", group: "completed", sequence: 1.5),
+        ]
+        // El que kodo declara como done, aunque no sea el primero ni coincida en mayúsculas.
+        #expect(Portfolio.doneState(in: extra, doneName: "done")?.id == "done")
+        // Sin nombre declarado o sin coincidencia: el primer estado completado.
+        #expect(Portfolio.doneState(in: extra, doneName: nil)?.id == "released")
+        #expect(Portfolio.doneState(in: extra, doneName: "Cerrada")?.id == "released")
+        // Nunca un estado de otro grupo, aunque se llame igual.
+        #expect(Portfolio.doneState(in: [states[0]], doneName: "Todo") == nil)
     }
 
     @Test func hitosCumplidosYVencidos() throws {

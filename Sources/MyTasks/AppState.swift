@@ -45,6 +45,8 @@ final class AppState {
     var portfolioLastSweep: String?
     /// Nombre del estado de revisión que declara kodo; sus tareas no vencen.
     var portfolioReviewState: String? { didSet { portfolioDataVersion &+= 1 } }
+    /// Nombre del estado «hecho» que declara kodo (destino del botón de la ficha).
+    var portfolioDoneState: String?
     @ObservationIgnored
     private var portfolioStatsCache: (version: Int, day: String, stats: [String: Portfolio.Stats]) = (-1, "", [:])
     /// Filtro de búsqueda del panel (client-side, no persistido).
@@ -459,6 +461,26 @@ final class AppState {
             kodoConfig: Portfolio.directory.deletingLastPathComponent().appending(path: "config.json")
         )
         if reviewState != portfolioReviewState { portfolioReviewState = reviewState }
+        portfolioDoneState = Portfolio.kodoStateName(
+            "done", kodoConfig: Portfolio.directory.deletingLastPathComponent().appending(path: "config.json")
+        )
+    }
+
+    /// Estado «hecho» del proyecto de una tarea; nil si aún no hay estados cargados.
+    func doneState(for item: WorkItem) -> WorkItemState? {
+        Portfolio.doneState(in: statesByProject[item.project] ?? [], doneName: portfolioDoneState)
+    }
+
+    /// Da por hecha una tarea desde la ficha (pensado para las que están en
+    /// revisión). Optimista con rollback, como el resto de ediciones; apunta ya
+    /// la fecha de cierre para que aparezca en «entregado» sin esperar al refresh.
+    func completePortfolioItem(_ item: WorkItem) async {
+        guard let done = doneState(for: item) else { return }
+        let now = ISO8601DateFormatter().string(from: Date())
+        await update(item, fields: ["state": done.id]) {
+            $0.state = done.id
+            $0.completedAt = now
+        }
     }
 
     /// Guarda la situación editada a mano en la ficha.

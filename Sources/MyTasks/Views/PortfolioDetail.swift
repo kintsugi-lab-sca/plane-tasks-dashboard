@@ -264,6 +264,19 @@ struct PortfolioDetailView: View {
             section("\(state.name) (\(items.count))", stateColor: state.color) {
                 ForEach(items) { item in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        // Solo las que están en revisión se pueden dar por hechas
+                        // desde aquí: son las que casi siempre basta con aprobar.
+                        if Portfolio.isReview(state, reviewState: app.portfolioReviewState),
+                           let done = app.doneState(for: item) {
+                            Button {
+                                Task { await app.completePortfolioItem(item) }
+                            } label: {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.system(size: 11 * fs))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Pasar a \(done.name)")
+                        }
                         Text("\(project?.identifier ?? "")-\(item.sequenceId)")
                             .font(.system(size: 10 * fs, design: .monospaced))
                             .foregroundStyle(app.theme.secondaryStyle)

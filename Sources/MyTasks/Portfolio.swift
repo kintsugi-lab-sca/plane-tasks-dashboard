@@ -346,14 +346,32 @@ enum Portfolio {
     /// declarado, no una adivinanza por el nombre: Plane no distingue revisión
     /// de en curso (ambos son `started`).
     static func reviewStateName(kodoConfig url: URL) -> String? {
+        kodoStateName("review", kodoConfig: url)
+    }
+
+    /// Nombre de un estado según la config de kodo
+    /// (`providers.plane.states.<key>`: `trigger`, `review`, `done`).
+    static func kodoStateName(_ key: String, kodoConfig url: URL) -> String? {
         guard let data = try? Data(contentsOf: url),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let providers = root["providers"] as? [String: Any],
               let plane = providers["plane"] as? [String: Any],
               let states = plane["states"] as? [String: Any],
-              let review = states["review"] as? String, !review.isEmpty
+              let name = states[key] as? String, !name.isEmpty
         else { return nil }
-        return review
+        return name
+    }
+
+    /// Estado al que pasa una tarea al darla por hecha: del grupo `completed`,
+    /// el que kodo declara como `done` (sin distinguir mayúsculas) y, si no hay
+    /// coincidencia, el primero del proyecto.
+    static func doneState(in states: [WorkItemState], doneName: String?) -> WorkItemState? {
+        let completed = states.filter { $0.group == "completed" }.sorted { $0.sequence < $1.sequence }
+        if let doneName,
+           let match = completed.first(where: { $0.name.compare(doneName, options: .caseInsensitive) == .orderedSame }) {
+            return match
+        }
+        return completed.first
     }
 
     /// true si `state` es el estado de revisión declarado (sin distinguir
