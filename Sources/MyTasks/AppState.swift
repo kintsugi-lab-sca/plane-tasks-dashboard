@@ -43,6 +43,8 @@ final class AppState {
     var portfolioShowsAgenda = false
     /// Día del último barrido completo de reuniones y correo (`.last-sweep`).
     var portfolioLastSweep: String?
+    /// Nombre del estado de revisión que declara kodo; sus tareas no vencen.
+    var portfolioReviewState: String? { didSet { portfolioDataVersion &+= 1 } }
     @ObservationIgnored
     private var portfolioStatsCache: (version: Int, day: String, stats: [String: Portfolio.Stats]) = (-1, "", [:])
     /// Filtro de búsqueda del panel (client-side, no persistido).
@@ -453,6 +455,10 @@ final class AppState {
     private func reloadPortfolio() {
         portfolio = Portfolio.load(from: Portfolio.directory)
         portfolioLastSweep = Portfolio.lastSweep(in: Portfolio.directory)
+        let reviewState = Portfolio.reviewStateName(
+            kodoConfig: Portfolio.directory.deletingLastPathComponent().appending(path: "config.json")
+        )
+        if reviewState != portfolioReviewState { portfolioReviewState = reviewState }
     }
 
     /// Guarda la situación editada a mano en la ficha.
@@ -482,7 +488,8 @@ final class AppState {
         let perEntry = portfolio.filter { !$0.archived }.map { entry in
             let scope = portfolioScope(for: entry)
             return (entry: entry, rows: Portfolio.agenda(
-                entry: entry, items: scope?.items ?? [], states: scope?.states ?? [], todayISO: today
+                entry: entry, items: scope?.items ?? [], states: scope?.states ?? [], todayISO: today,
+                reviewState: portfolioReviewState
             ))
         }
         return Portfolio.weekAgenda(perEntry, todayISO: today)
@@ -532,7 +539,10 @@ final class AppState {
         }
         if let cached = portfolioStatsCache.stats[entry.slug] { return cached }
         guard let scope = portfolioScope(for: entry) else { return nil }
-        var stats = Portfolio.stats(items: scope.items, states: scope.states, memberIDs: nil, todayISO: today)
+        var stats = Portfolio.stats(
+            items: scope.items, states: scope.states, memberIDs: nil, todayISO: today,
+            reviewState: portfolioReviewState
+        )
         stats.unreported = Portfolio.unreported(entry: entry, items: scope.items, states: scope.states)
         portfolioStatsCache.stats[entry.slug] = stats
         return stats

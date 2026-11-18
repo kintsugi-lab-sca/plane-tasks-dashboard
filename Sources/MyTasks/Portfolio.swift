@@ -341,15 +341,40 @@ enum Portfolio {
         return .none
     }
 
+    /// Nombre del estado «en revisión» tal como lo tiene configurado kodo
+    /// (`providers.plane.states.review` de `~/.kodo/config.json`). Es un dato
+    /// declarado, no una adivinanza por el nombre: Plane no distingue revisión
+    /// de en curso (ambos son `started`).
+    static func reviewStateName(kodoConfig url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let providers = root["providers"] as? [String: Any],
+              let plane = providers["plane"] as? [String: Any],
+              let states = plane["states"] as? [String: Any],
+              let review = states["review"] as? String, !review.isEmpty
+        else { return nil }
+        return review
+    }
+
+    /// true si `state` es el estado de revisión declarado (sin distinguir
+    /// mayúsculas: «In review» en un proyecto, «In Review» en otro). Una tarea
+    /// en revisión ya está entregada: su fecha límite pasada no es un retraso.
+    static func isReview(_ state: WorkItemState?, reviewState: String?) -> Bool {
+        guard let state, let reviewState, state.group == "started" else { return false }
+        return state.name.compare(reviewState, options: .caseInsensitive) == .orderedSame
+    }
+
     /// Contadores de las tareas de la ficha. `memberIDs` restringe a un módulo
     /// (nil = proyecto entero). Las canceladas no cuentan.
     static func stats(
         items: [WorkItem],
         states: [WorkItemState],
         memberIDs: Set<String>?,
-        todayISO: String
+        todayISO: String,
+        reviewState: String? = nil
     ) -> Stats {
         let groups = Dictionary(uniqueKeysWithValues: states.map { ($0.id, $0.group) })
+        let reviewIDs = Set(states.filter { isReview($0, reviewState: reviewState) }.map(\.id))
         var stats = Stats()
         let since = dayISO(todayISO, minusDays: deliveredDays)
         for item in items {
@@ -368,7 +393,8 @@ enum Portfolio {
             }
             guard let target = item.targetDate else { continue }
             if target < todayISO {
-                stats.overdue += 1
+                // En revisión = entregada: no cuenta como vencida.
+                if !reviewIDs.contains(item.state) { stats.overdue += 1 }
             } else if stats.nextDue.map({ target < $0 }) ?? true {
                 stats.nextDue = target
             }
@@ -443,6 +469,9 @@ enum Portfolio {
         let overdue: Bool
         /// Hito marcado como cumplido.
         var done = false
+        /// Estado de Plane de la tarea (nombre y color "#RRGGBB"); nil en hitos.
+        var stateName: String? = nil
+        var stateColor: String? = nil
 
         var id: String { "\(date)|\(itemID ?? label)" }
     }
@@ -459,9 +488,10 @@ enum Portfolio {
         entry: PortfolioEntry,
         items: [WorkItem],
         states: [WorkItemState],
-        todayISO: String
+        todayISO: String,
+        reviewState: String? = nil
     ) -> [AgendaRow] {
-        let active = Set(states.filter(\.isActive).map(\.id))
+        let active = Dictionary(uniqueKeysWithValues: states.filter(\.isActive).map { ($0.id, $0) })
         let keepDoneSince = dayISO(todayISO, minusDays: doneMilestoneDays)
         let milestones = entry.dates
             .filter { !$0.isDone || $0.date >= keepDoneSince }
@@ -472,8 +502,14 @@ enum Portfolio {
                 )
             }
         let tasks = items.compactMap { item -> AgendaRow? in
-            guard active.contains(item.state), let target = item.targetDate else { return nil }
-            return AgendaRow(date: target, label: item.name, itemID: item.id, overdue: target < todayISO)
+            guard let state = active[item.state], let target = item.targetDate else { return nil }
+            // Rojo solo para lo que tiene fecha y no se ha cumplido: una tarea
+            // en revisión ya está entregada.
+            let overdue = target < todayISO && !isReview(state, reviewState: reviewState)
+            return AgendaRow(
+                date: target, label: item.name, itemID: item.id, overdue: overdue,
+                stateName: state.name, stateColor: state.color
+            )
         }
         return (milestones + tasks).sorted {
             $0.date != $1.date ? $0.date < $1.date : ($0.itemID == nil && $1.itemID != nil)
